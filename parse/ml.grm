@@ -291,7 +291,7 @@ app_exp	: aexp	        ([{item=markexp(aexp,aexpleft,aexpright),
 					 LBRACEleft,RBRACEright))
 	| LBRACE RBRACE		(RecordExp nil)
 	| LPAREN RPAREN		(unitExp)
-	| LPAREN exp_ps RPAREN	(SeqExp exp_ps)
+	| LPAREN exp_ps RPAREN	(BracketExp (SeqExp exp_ps))
 	| LPAREN exp_2c RPAREN	(TupleExp exp_2c)
 	| LBRACKET exp_list RBRACKET     (ListExp exp_list)
 	| LBRACKET RBRACKET	(ListExp nil)

@@ -34,6 +34,7 @@ sig
     | CaseExp of{expr:exp,rules:rule list}
 				  (* case expression *)
     | LetExp of {dec:dec,expr:exp} (* let expression *)
+    | BracketExp of exp       (* an expression in parentheses *)
     | SeqExp of exp list		(* sequence of expressions *)
     | IntExp of literal		(* integer *)
     | WordExp of literal	(* word literal *)
