@@ -493,7 +493,8 @@ fun patType(pat: pat, depth, region) : pat * ty =
 				 region=region,kind=ppPat,kindname="pattern",phrase=pat}
 		     then (typ := ty; (LAYEREDpat(cpat,npat),MARKty(ty, region)))
 		     else (pat,WILDCARDty)
-		 end)
+		 end
+            | p => bug "patType -- unexpected strip in layered pattern")
        | p => bug "patType -- unexpected pattern"
 
 fun expType(exp: exp, occ: occ, tdepth: DI.depth, region) : exp * ty =

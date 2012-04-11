@@ -1023,6 +1023,7 @@ and ppDec (context as (env,source_opt)) ppstrm =
 		  prpos(ppstrm,source,e); pps ")")
 	       | NONE => ppDec'(dec,d))
 	  
+            | ppDec' _ = bug "ppDec' -- missing value constructor"
      in ppDec'
     end
 
