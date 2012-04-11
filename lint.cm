@@ -1,9 +1,14 @@
 group 
   structure Lint
+  functor LintFn
+  signature REPORT
 is
   Parse/parser.cm
   top.sml
+  lint.sml
+  report.sig
 
 
+	$smlnj/viscomp/elabdata.cm
 	$smlnj/viscomp/basics.cm
 	$smlnj/basis/basis.cm
