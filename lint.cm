@@ -1,0 +1,9 @@
+group 
+  structure Lint
+is
+  Parse/parser.cm
+  top.sml
+
+
+	$smlnj/viscomp/basics.cm
+	$smlnj/basis/basis.cm
