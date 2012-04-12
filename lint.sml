@@ -291,25 +291,35 @@ let
         | Element of comma_syntax
         | Raise
         | Handle
+        | Bracketed
     and comma_syntax = Record | Tuple | List | Vector
 
     fun checkBracket region context rpt = rpt (* no checking yet *)
 
     type env = unit
 
+    fun atom region Bracketed rpt what =
+          let val (pos, _) = region
+          in  Report.brackets ("redundant parentheses around " ^ what, pos, rpt)
+          end
+      | atom _ _ rpt _ = rpt
+
     fun elabExp(exp: Ast.exp, env: env, context: context, region: region, rpt : Report.t) 
 		: Report.t =
+      let val atom = atom region context rpt
+      in
 	(case exp
 	  of BracketExp e => checkBracket region context rpt
-       | VarExp path => rpt
-	   | IntExp s => rpt
-       | WordExp s => rpt
-	   | RealExp r => rpt
-	   | StringExp s => rpt
-	   | CharExp s => rpt
+       | VarExp [sym] => atom "name"
+       | VarExp _ => atom "qualified name"
+	   | IntExp s => atom "integer literal"
+       | WordExp s => atom "word literal"
+	   | RealExp r => atom "floating-point literal"
+	   | StringExp s => atom "string literal"
+	   | CharExp s => atom "character literal"
 	   | RecordExp cells =>
           foldl (fn ((_, e), rpt) => elabExp(e, env, Element Record, region, rpt))
-                rpt cells
+                (atom "record literal") cells
 	   | SeqExp exps =>
 	       (case exps
               of [e] => elabExp (e,env,context,region,rpt)
@@ -317,13 +327,13 @@ let
                | _ => elabExpList(exps,env,context,region,rpt))
 	   | ListExp exps =>
           foldl (fn (e, rpt) => elabExp(e, env, Element List, region, rpt))
-                rpt exps
+                (atom "list literal") exps
 	   | TupleExp exps =>
           foldl (fn (e, rpt) => elabExp(e, env, Element Tuple, region, rpt))
-                rpt exps
+                (atom "tuple") exps
 	   | VectorExp exps =>
           foldl (fn (e, rpt) => elabExp(e, env, Element Vector, region, rpt))
-                rpt exps
+                (atom "vector literal") exps
 	   | AppExp {function,argument} =>
 	       let val rpt = elabExp(function, env, Function, region, rpt)
                val rpt = elabExp(argument, env, Argument, region, rpt)
@@ -332,7 +342,8 @@ let
 	   | ConstraintExp {expr=exp,constraint=ty} =>
            elabExp(exp, env, Constraint, region, rpt)
        | _ => rpt
-)(*
+)end
+(*
 	   | HandleExp {expr,rules} =>
            let val rpt = elabExp(expr, env, Handle, region, rpt)
            in  elabMatch(rules,env,region,rpt)
