@@ -47,6 +47,7 @@ end
 
 
 val say = Control_Print.say
+fun say s = TextIO.output(TextIO.stdErr, s)
 val debugging = ref false
 fun debugmsg (msg: string) = if !debugging then (say msg; say "\n") else ()
 fun bug msg = ErrorMsg.impossible("LintFn: "^msg)
@@ -544,17 +545,16 @@ let
         in (FIXdec ds,env,TS.empty,no_updt)
            end
        | OvldDec dec  => elabOVERLOADdec(dec,env,rpath,region)
-       | MarkDec(dec,region') =>
-           let val (d,env,tv,updt)= elabDec'(dec,env,rpath,region')
-        in (cMARKdec(d,region'), env,tv,updt)
-           end
+*)
+       | MarkDec(dec,region') => elabDec'(dec, env, region', rpt)
        | StrDec _ => bug "strdec"
        | AbsDec _ => bug "absdec"
        | FctDec _ => bug "fctdec"
        | SigDec _ => bug "sigdec"
+(*
        | FsigDec _ => bug "fsigdec")
 *)
-       | _ => rpt)
+       | _ => (say "Skipped declaration\n"; rpt))
               
 
     (**** OVERLOADING ****)
@@ -955,6 +955,7 @@ let
                   val _ = checkBoundConstructor(env,var,error fbregion)
      *)
                   val v = var
+                  val _ = app say ["Linting function named ", S.symbolToString v, "\n"]
 
                in   (v,clauses,fbregion)
               end (* makevar *)
@@ -990,7 +991,7 @@ let
 *)
     and elabExpList x = unimp "elabExpList" x
 
- in ()
+ in elabDec' (dec, env, region, rpt)
 
 end (* function elabDec *)
 
