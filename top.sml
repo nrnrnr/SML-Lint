@@ -1,3 +1,5 @@
+structure LintErr = LintFn(structure Report = ReportErr)
+
 structure Lint = struct
   fun parse filename =
     let val fd = TextIO.openIn filename

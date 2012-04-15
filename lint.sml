@@ -4,7 +4,6 @@
                        
 functor LintFn (structure Report : REPORT where type name = Symbol.symbol
                                             and type pos  = SourceMap.charpos
-                val error : SourceMap.region -> 'a -> string -> 'b -> unit
                ) =
 struct
  
@@ -12,6 +11,8 @@ local structure EM = ErrorMsg
       open Absyn Ast 
       structure S = Symbol
       val bogusID = S.varSymbol "bogus ID"
+      fun badsource () = badsource ()
+      fun error x = ErrorMsg.error (badsource ()) x
 in
 
 val say = Control_Print.say

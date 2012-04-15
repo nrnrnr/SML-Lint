@@ -2,11 +2,13 @@ group
   structure Lint
   functor LintFn
   signature REPORT
+  structure ReportErr
 is
   Parse/parser.cm
   top.sml
   lint.sml
   report.sig
+  report.sml
 
 
 	$smlnj/viscomp/elabdata.cm
