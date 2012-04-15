@@ -15,6 +15,37 @@ local structure EM = ErrorMsg
       fun error x = ErrorMsg.error (badsource ()) x
 in
 
+(*
+infix  7 * / mod div
+infix  6 + - ^
+infixr 5 :: @
+infix  4 = <> > >= < <=
+infix  3 := o
+infix  0 before
+*)
+
+local
+    val left = [ (7, ["*", "/", "mod", "div"])
+               , (6, ["+", "-", "^"])
+               , (4, ["=", "<>", ">", ">=", "<", "<="])
+               , (3, [":=", "o"])
+               , (0, ["before"])
+               ]
+    val right = [ (5, ["::", "@"]) ]
+
+    val sym = Symbol.varSymbol
+
+    fun addfix assoc ((prec, oprs), env) =
+          foldl (fn (opr, env) => (sym opr, assoc prec) :: env) env oprs
+
+in
+    val initEnv = []
+    val initEnv = foldl (addfix Fixity.infixleft)  initEnv left
+    val initEnv = foldl (addfix Fixity.infixright) initEnv right
+end
+
+
+
 val say = Control_Print.say
 val debugging = ref false
 fun debugmsg (msg: string) = if !debugging then (say msg; say "\n") else ()
@@ -27,6 +58,10 @@ fun lookFix ([], _) = Fixity.NONfix
        case S.compare(x, y)
          of EQUAL => f
           | _     => lookFix (xs, y)
+
+val _ = case Fixity.fixityToString (lookFix (initEnv, Symbol.varSymbol "@"))
+          of "infixr 5 " => ()
+           | s => (app print ["Bad fixity ", s, " for operator @\n"] ; bug "fixity")
 
 val debugPrint = (fn x => if !debugging then print x else ())
 
@@ -93,8 +128,8 @@ fun elabABSTYPEdec({abstycs,withtycs,body},env,rpt,
 
 
 (**** ELABORATE GENERAL (core) DECLARATIONS ****)
-and elabDec (dec, env, isFree, rpath, region,
-             compInfo (*as {mkLvar=mkv,error,errorMatch,...}*)) =
+and elabDec (dec, env, region, rpt) =
+    (**** COULD PASS ERROR HERE ****)
 
 let
     val _ = debugmsg ">>ElabCore.elabDec"
