@@ -1,6 +1,7 @@
 structure LintErr = LintFn(structure Report = ReportErr)
 
 structure Lint = struct
+  val _ = LintErr.debugging := true
   fun lint (source : Source.inputSource) dec =
     let val rpt = ReportErr.mk (#sourceMap source)
         val rpt = LintErr.elabDec(dec, LintErr.initEnv, SourceMap.nullRegion, rpt)

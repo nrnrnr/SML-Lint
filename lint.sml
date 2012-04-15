@@ -344,7 +344,10 @@ let
         | Bracketed
     and comma_syntax = Record | Tuple | List | Vector
 
-    fun checkBracket region context rpt = rpt (* no checking yet *)
+    fun checkBracket region context rpt =
+      case context
+        of Rhs => Report.brackets("parens on RHS of function", fst region, rpt)
+         | _ => rpt
 
     type env = fixenv
 
@@ -359,7 +362,11 @@ let
       let val atom = atom region context rpt
       in
     (case exp
-      of BracketExp e => checkBracket region context rpt
+      of BracketExp e =>
+           let val rpt = checkBracket region context rpt
+               val _ = debugmsg "brackets"
+           in  rpt  (* sequence/infix not yet implemented *)
+           end
        | VarExp [sym] => atom "name"
        | VarExp _ => atom "qualified name"
        | IntExp s => atom "integer literal"
@@ -511,8 +518,8 @@ let
 *)
     (**** SIMPLE DECLARATIONS ****)
 
-    and elabDb region (_, rpt) = rpt (* BOGUS *)
-    and elabTb region (_, rpt) = rpt (* BOGUS *)
+    and elabDb region (_, rpt) = (say "skipped db"; rpt) (* BOGUS *)
+    and elabTb region (_, rpt) = (say "skipped tb"; rpt) (* BOGUS *)
 
 
     and elabDec'(dec,env,region,rpt) : fixenv * Report.t =
@@ -996,6 +1003,7 @@ let
         fun elabClause(region,({kind,argpats,resultty,exp,funsym}), rpt) =
         let val rpt = elabPatList(argpats, env, region, PClause, rpt)
             val rpt = elabExp(exp, env, Rhs, region, rpt)
+            val _ = debugmsg "linting clause"
          in rpt
         end
         fun elabFundec ((var,clauses,region),rpt) = 
