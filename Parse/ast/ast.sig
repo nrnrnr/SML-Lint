@@ -86,9 +86,9 @@ sig
   (* STRUCTURE EXPRESSION *) 
   and strexp = VarStr of path			(* variable structure *)
 	     | BaseStr of dec			(* defined structure *)
-             | ConstrainedStr of strexp * sigexp sigConst (* signature constrained *)
+         | ConstrainedStr of strexp * sigexp sigConst (* signature constrained *)
 	     | AppStr of path * (strexp * bool) list (* application (external) *)
-             | AppStrI of path * (strexp * bool) list (* application (internal) *)
+         | AppStrI of path * (strexp * bool) list (* application (internal) *)
 	     | LetStr of dec * strexp		(* let in structure *)
 	     | MarkStr of strexp * region (* mark *)
 
