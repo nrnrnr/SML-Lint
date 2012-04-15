@@ -13,6 +13,8 @@ local structure EM = ErrorMsg
       val bogusID = S.varSymbol "bogus ID"
       fun badsource () = badsource ()
       fun error x = ErrorMsg.error (badsource ()) x
+      fun fst (x, y) = x
+      fun snd (x, y) = y
 in
 
 (*
@@ -554,7 +556,7 @@ let
        | OvldDec dec  => elabOVERLOADdec(dec,env,rpath,region)
 *)
        | MarkDec(dec,region') => elabDec'(dec, env, region', rpt)
-       | StrDec _ => bug "strdec"
+       | StrDec strbs => here (elabStrbs(strbs, env, region, rpt))
        | AbsDec _ => bug "absdec"
        | FctDec _ => bug "fctdec"
        | SigDec _ => bug "sigdec"
@@ -563,6 +565,30 @@ let
 *)
        | _ => (say "Skipped declaration\n"; here rpt))
       end              
+
+  and elabStrbs (strbs, env, region, rpt) =
+        foldl (fn (strb, rpt) => elabStrb (strb, env, region, rpt)) rpt strbs
+  and elabStrb (strb, env, region, rpt) =
+      (case strb
+         of MarkStrb (strb, region) => elabStrb (strb, env, region, rpt)
+          | Strb {name, def, constraint} => elabStrexp (def, env, region, rpt))
+  and elabStrexp (def, env, region, rpt) =
+      (case def
+         of VarStr _ => rpt
+          | BaseStr dec => snd (elabDec' (dec, env, region, rpt))
+          | ConstrainedStr (def, constraint) =>
+             elabStrexp (def, env, region, rpt)  (* XXX constraint not checked *)
+          | AppStr (_, args) =>
+             foldl (fn ((def, _), rpt) => elabStrexp(def, env, region, rpt)) rpt args
+          | AppStrI (path, args) => elabStrexp(AppStr (path, args), env, region, rpt)
+          | LetStr (dec, def) =>
+             let val (env, rpt) = elabDec' (dec, env, region, rpt)
+             in  elabStrexp (def, env, region, rpt)
+             end
+          | MarkStr (def, region) => elabStrexp (def, env, region, rpt))
+
+             
+
 
     (**** OVERLOADING ****)
 
