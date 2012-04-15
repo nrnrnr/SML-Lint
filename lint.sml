@@ -47,7 +47,6 @@ end
 
 
 val say = Control_Print.say
-fun say s = TextIO.output(TextIO.stdErr, s)
 val debugging = ref false
 fun debugmsg (msg: string) = if !debugging then (say msg; say "\n") else ()
 fun bug msg = ErrorMsg.impossible("LintFn: "^msg)
@@ -514,12 +513,17 @@ let
     and elabTb region (_, rpt) = rpt (* BOGUS *)
 
 
-    and elabDec'(dec,env,region,rpt) =
+    and elabDec'(dec,env,region,rpt) : fixenv * Report.t =
+      let fun here rpt = (env, rpt)
+      in
     (case dec 
-      of TypeDec tbs => foldl (elabTb region) rpt tbs
+      of TypeDec tbs => here (foldl (elabTb region) rpt tbs)
        | DatatypeDec x =>
-           foldl (elabTb region) (foldl (elabDb region) rpt (#datatycs x)) (#withtycs x)
-       | DataReplDec(name,path) => rpt
+           let val rpt = foldl (elabDb region) rpt (#datatycs x)
+               val rpt = foldl (elabTb region) (rpt) (#withtycs x)
+           in  here rpt
+           end
+       | DataReplDec(name,path) => here rpt
        | AbstypeDec x =>
            let val rpt = foldl (elabDb region) rpt (#abstycs x)
                val rpt = foldl (elabTb region) rpt (#withtycs x)
@@ -531,11 +535,14 @@ let
            elabVALdec(vbs,explicitTvs,env,region,rpt)
 *)
        | FunDec(fbs,explicitTvs) =>
-           elabFUNdec(fbs,explicitTvs,env,region,rpt)
+           here (elabFUNdec(fbs,explicitTvs,env,region,rpt))
 (*
        | ValrecDec(rvbs,explicitTvs) =>
            elabVALRECdec(rvbs,explicitTvs,env,rpath,region)
-       | SeqDec ds => elabSEQdec(ds,env,rpath,region)
+*)
+       | SeqDec ds =>
+           foldl (fn (dec, (env, rpt)) => elabDec'(dec, env, region, rpt)) (env, rpt) ds
+(*
        | LocalDec ld => elabLOCALdec(ld,env,rpath,region)
        | OpenDec ds => elabOPENdec(ds,env,region)
        | FixDec (ds as {fixity,ops}) => 
@@ -554,8 +561,8 @@ let
 (*
        | FsigDec _ => bug "fsigdec")
 *)
-       | _ => (say "Skipped declaration\n"; rpt))
-              
+       | _ => (say "Skipped declaration\n"; here rpt))
+      end              
 
     (**** OVERLOADING ****)
 
