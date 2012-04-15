@@ -57,58 +57,27 @@ and elabDec (dec, env, isFree, rpath, region,
 let
     val _ = debugmsg ">>ElabCore.elabDec"
 
+    (**** TYPES ****)
+
+    datatype tycontext
+        = Exn
+        | Constructor
+        
+    fun elabTy region tcontext ty rpt = rpt
+
+
     (**** EXCEPTION DECLARATIONS ****)
 
-(*
-    fun elabEb (region:region) (env:SE.staticEnv) (eb:Ast.eb) =
+    fun elabEb (region:region) (eb:Ast.eb) rpt =
 	case eb
-	  of EbGen{exn=id,etype=NONE} =>
-	       let val exn =
-		     DATACON{name=id, const=true, typ=exnTy, lazyp=false,
-			     rep=EXN(LVAR(mkv(SOME id))), sign=CNIL}
-		in ([EBgen{exn=exn, etype=NONE, 
-                           ident=STRINGexp(S.name id)}], 
-		    SE.bind(id, B.CONbind exn, SE.empty),TS.empty)
-	       end
-	   | EbGen{exn=id,etype=SOME typ} =>
-	       let val (ty,vt) = ET.elabType(typ,env,error,region)
-		   val exn = 
-                     DATACON{name=id, const=false, typ=(ty --> exnTy), lazyp=false,
-			     rep=EXN(LVAR(mkv(SOME id))), sign=CNIL}
-		in ([EBgen{exn=exn,etype=SOME ty,
-			   ident=STRINGexp(S.name id)}],
-		    SE.bind(id,B.CONbind exn, SE.empty),vt) 
-	       end
-	   | EbDef{exn=id,edef=qid} =>
-	       let val edef as DATACON{const,typ,sign,...} =
-		     LU.lookExn(env,SP.SPATH qid,error region)
-                   val nrep = EXN(LVAR(mkv(SOME id)))
-	           val exn = DATACON{name=id, const=const, typ=typ, lazyp=false,
-                                     sign=sign, rep=nrep}
-		in ([EBdef{exn=exn,edef=edef}],
-		    SE.bind(id,B.CONbind exn,SE.empty),TS.empty)
-	       end
-	   | MarkEb(eb,region) => elabEb region env eb
-
-    fun elabEXCEPTIONdec(excbinds:Ast.eb list, env: SE.staticEnv, region) =
-	let val (ebs,env,vt) = 
-	      foldl
-		(fn (exc1,(ebs1,env1,vt1)) =>
-		   let val (eb2,env2,vt2) = elabEb region env exc1
-		    in (eb2@ebs1, SE.atop(env2,env1),
-                        union(vt1,vt2,error region))
-		   end)
-		 ([],SE.empty,TS.empty) excbinds
-	    fun getname(EBgen{exn=DATACON{name,...},...}) = name
-	      | getname(EBdef{exn=DATACON{name,...},...}) = name
-	 in EU.checkUniq (error region, "duplicate exception declaration",
-		       map getname ebs);
-	    (EXCEPTIONdec(rev ebs),env,vt,no_updt)
-	end
-
+	  of EbGen{exn=id,etype=NONE} => rpt
+	   | EbGen{exn=id,etype=SOME typ} => elabTy region Exn typ rpt
+	   | EbDef{exn=id,edef=qid} => rpt
+	   | MarkEb(eb,region) => elabEb region eb rpt
 
     (**** PATTERNS ****)
 
+(*
     fun apply_pat (c as MarkPat(_,(l1,r1)),p as MarkPat(_,(l2,r2))) = 
 	  MarkPat(AppPat{constr=c, argument=p},(Int.min(l1,l2),Int.max(r1,r2)))
       | apply_pat (c ,p) = AppPat{constr=c, argument=p}
@@ -118,7 +87,11 @@ let
       | tuple_pat (a,b) = TuplePat[a,b]
 
     val patParse = Precedence.parse{apply=apply_pat, pair=tuple_pat}
+*)
 
+    fun elabPat region pat pcontext rpt = rpt
+
+(*
     exception FreeOrVars
     fun elabPat(pat:Ast.pat, env:SE.staticEnv, region:region) 
 		 : Absyn.pat * TS.tyvarset =
