@@ -50,7 +50,7 @@ fun parse {apply,infixapp} =
                                       \operators of same precedence"
                                  EM.nullErrorBody
                   else ();
-                  parse(NONf(apply(e2,pair (e3,e1)),r),(e4,f,SOME sym,err)))
+                  parse'(NONf(infixapp(e3, e2, e1),r),(e4,f,SOME sym,err)))
 
         | parse(p as NONf _, (e',F.INfix(lbp,rbp),SOME sym,_)) = 
             INf(sym,rbp,e',p)
@@ -58,7 +58,7 @@ fun parse {apply,infixapp} =
      
       (* clean up the stack *)
       fun finish (NONf(e1,INf(_,_,e2,NONf(e3,r))),err) = 
-                     finish(NONf(apply(e2,pair (e3,e1)),r),err)
+                     finish(NONf(infixapp(e3, e2, e1),r),err)
         | finish (NONf(e1,NILf),_) = e1
         | finish (INf(sym,_,e1,NONf(e2,p)),err) = 
                      (err EM.COMPLAIN 
@@ -71,7 +71,7 @@ fun parse {apply,infixapp} =
    in fn (items as item1 :: items',env:env,error) =>
         let fun getfix{item,region,fixity} =
               (item,  case fixity of NONE => F.NONfix 
-                               | SOME sym => lookup(sym,env),
+                               | SOME sym => lookup(env,sym),
                fixity, error region)
 
             fun endloc[{region=(_,x),item,fixity}] = error(x,x)
