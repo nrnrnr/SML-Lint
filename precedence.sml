@@ -4,7 +4,7 @@
 signature PRECEDENCE_STANDALONE =
 sig
   type env
-  val parse: {apply: 'a * 'a -> 'a, pair: 'a * 'a -> 'a} -> 
+  val parse: {apply: 'a * 'a -> 'a, infixapp: 'a * 'a * 'a -> 'a} -> 
                 'a Ast.fixitem list * env * 
                 (Ast.region->ErrorMsg.complainer) -> 'a
 
@@ -12,7 +12,7 @@ end (* signature PRECEDENCE *)
 
 
 functor PrecedenceFn (type env
-                      val lookup : Symbol.symbol * env -> Fixity.fixity)
+                      val lookup : env * Symbol.symbol -> Fixity.fixity)
                         : PRECEDENCE_STANDALONE =
 struct    
 
@@ -28,7 +28,7 @@ datatype 'a precStack
   | NONf of 'a * 'a precStack
   | NILf
 
-fun parse {apply,pair} =
+fun parse {apply,infixapp} =
   let fun ensureNONf((e,F.NONfix,_,err),p) = NONf(e,p)
         | ensureNONf((e,F.INfix _,SOME sym,err),p) = 
            (err EM.COMPLAIN

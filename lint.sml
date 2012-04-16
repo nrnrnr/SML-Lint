@@ -29,6 +29,14 @@ infix 3 >>
 
 fun f >> g = g o f
 
+
+val say = Control_Print.say
+val debugging = ref false
+fun debugmsg (msg: string) = if !debugging then (say msg; say "\n") else ()
+fun bug msg = ErrorMsg.impossible("LintFn: "^msg)
+
+type fixenv = (S.symbol * Fixity.fixity) list
+
 local
     val left = [ (7, ["*", "/", "mod", "div"])
                , (6, ["+", "-", "^"])
@@ -46,7 +54,7 @@ local
     type env = (Symbol.symbol * Fixity.fixity) list
                        
 
-    fun lookup (sym, env) =
+    fun lookup (env, sym) =
       case List.find (fn (s, f) => Symbol.eq (sym, s)) env
         of SOME (_, f) => f
          | NONE => Fixity.NONfix
@@ -59,23 +67,17 @@ in
 
     structure Precedence = PrecedenceFn(type env = env
                                         val lookup = lookup)
+    val lookFix = lookup
 
 end
 
-
-
-val say = Control_Print.say
-val debugging = ref false
-fun debugmsg (msg: string) = if !debugging then (say msg; say "\n") else ()
-fun bug msg = ErrorMsg.impossible("LintFn: "^msg)
-
-type fixenv = (S.symbol * Fixity.fixity) list
-
+(*
 fun lookFix ([], _) = Fixity.NONfix
   | lookFix ((x,f)::xs, y) =
        case S.compare(x, y)
          of EQUAL => f
           | _     => lookFix (xs, y)
+*)
 
 val _ = case Fixity.fixityToString (lookFix (initEnv, Symbol.varSymbol "@"))
           of "infixr 5 " => ()
