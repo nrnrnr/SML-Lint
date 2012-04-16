@@ -186,9 +186,13 @@ let
     val patParse = Precedence.parse{apply=apply_pat, pair=tuple_pat}
 *)
 
-    datatype pcontext = PClause
+    datatype pcontext
+      = PClause
+      | PVal
+      
 
-    fun elabPat (p, env, region, pcontext, rpt) = rpt
+    fun elabPat (p:Ast.pat, env, pcontext : pcontext, region:region) rpt =
+      (debugmsg "skipped pattern"; rpt)
 
 (*
     exception FreeOrVars
@@ -338,8 +342,8 @@ let
       ([],TS.empty) labs
 
 *)
-    and elabPatList(ps, env, region:region, context, rpt) =
-    foldr (fn (p1,rpt) => elabPat(p1, env, region, context, rpt)) rpt ps
+    and elabPatList(ps, env, context, region:region) rpt =
+      foldr (fn (p1,rpt) => elabPat (p1, env, context, region) rpt) rpt ps
 
     (**** EXPRESSIONS ****)
 
@@ -371,7 +375,7 @@ let
     fun checkBracket region context rpt =
       case context
         of Rhs => Report.brackets("parens on RHS of function", fst region, rpt)
-         | _ => rpt
+         | _ => (debugmsg "brackets not checked" ; rpt)
 
     type env = fixenv
 
@@ -381,10 +385,10 @@ let
           end
       | atom _ _ rpt _ = (debugmsg "got atom"; rpt)
 
-    fun elabExp(exp: Ast.exp, env: env, context: context, region: region, rpt : Report.t) 
+    fun elabExp(exp: Ast.exp, env: env, context: context, region: region) (rpt : Report.t) 
         : Report.t =
       let val atom = atom region context rpt
-          fun elab ctx exp rpt = elabExp (exp, env, ctx, region, rpt)
+          fun elab ctx exp rpt = elabExp (exp, env, ctx, region) rpt
           fun uncurry f (x, y) = f x y
       in
     (case exp
@@ -405,7 +409,7 @@ let
                 (atom "record literal") cells
        | SeqExp exps =>
            (case exps
-              of [e] => elabExp (e,env,context,region,rpt)
+              of [e] => elabExp (e,env,context,region) rpt
                | [] => bug "elabExp(SeqExp[])"
                | _ => elabExpList(exps,env,context,region,rpt))
        | ListExp exps =>
@@ -419,14 +423,14 @@ let
        | ConstraintExp {expr=exp,constraint=ty} => elab Constraint exp rpt
 (*
        | HandleExp {expr,rules} =>
-           let val rpt = elabExp(expr, env, Handle, region, rpt)
+           let val rpt = elabExp(expr, env, Handle, region) rpt
            in  elabMatch(rules,env,region,rpt)
            end
 *)
        | RaiseExp exp => elab Raise exp rpt
        | LetExp {dec,expr} => 
            let val (env, rpt) = elabDec'(dec, env, region, rpt)
-           in  elabExp (expr, env, LetBody, region, rpt)
+           in  elabExp (expr, env, LetBody, region) rpt
            end
 (*
        | CaseExp {expr,rules} =>
@@ -451,7 +455,7 @@ let
         in (FNexp (completeMatch rls,UNDEFty),tyv,updt)
            end
 *)
-       | MarkExp (exp,region) => elabExp (exp, env, context, region, rpt)
+       | MarkExp (exp,region) => elabExp (exp, env, context, region) rpt
 (*
        | SelectorExp s => 
            (let val v = newVALvar s
@@ -463,17 +467,17 @@ let
         TS.empty, no_updt)
 *)
        | FlatAppExp items =>
-           elabInfix(expParse(map (fixmap EXP) items,env,error),env,context,region,rpt)
+           elabInfix(expParse(map (fixmap EXP) items,env,error),env,context,region)rpt
        | _ => (debugmsg "skipped expression"; rpt)
 )end
 
-    and elabInfix (exp, env, context, region, rpt) =
-      let fun elab exp context rpt = elabInfix (exp, env, context, region, rpt)
+    and elabInfix (exp, env, context, region) =
+      let fun elab exp context = elabInfix (exp, env, context, region)
       in  case exp
-            of EXP e => elabExp(e, env, context, region, rpt)
-             | APPLY (f, arg) => (elab f Function >> elab arg Argument) rpt
+            of EXP e => elabExp (e, env, context, region) 
+             | APPLY (f, arg) => (elab f Function >> elab arg Argument) 
              | INFIX (left, opr, right) =>
-                  (elab left InfixChild >> elabOpr opr >> elab right InfixChild) rpt
+                  (elab left InfixChild >> elabOpr opr >> elab right InfixChild) 
       end
 
     and elabOpr (EXP e) =
@@ -540,7 +544,6 @@ let
     and elabDb region (_, rpt) = (say "skipped db"; rpt) (* BOGUS *)
     and elabTb region (_, rpt) = (say "skipped tb"; rpt) (* BOGUS *)
 
-
     and elabDec'(dec,env,region,rpt) : fixenv * Report.t =
       let fun here rpt = (env, rpt)
       in
@@ -559,8 +562,7 @@ let
            end
 (*
        | ExceptionDec ebs => elabEXCEPTIONdec(ebs,env,region)
-       | ValDec(vbs,explicitTvs) =>
-           elabVALdec(vbs,explicitTvs,env,region,rpt)
+       | ValDec(vbs,_) => foldl (elabVb region) rpt vbs
 *)
        | FunDec(fbs,explicitTvs) =>
            here (elabFUNdec(fbs,explicitTvs,env,region,rpt))
@@ -667,114 +669,13 @@ let
 *)
 
     (****  VALUE DECLARATIONS ****)
-    (* elabVB : Ast.vb * tyvar list * staticEnv * region
-                ->  ... *)
-(*
-    and elabVB (MarkVb(vb,region),etvs,env,_) =
-          (* pass through MarkVb, updating region parameter *)
-          let val (d, tvs, u) = elabVB(vb,etvs,env,region)
-              val d' = cMARKdec (d, region)
-           in (d', tvs, u)
-          end
-      | elabVB (Vb{pat,exp,lazyp},etvs,env,region) =
-      let val (pat,pv) = elabPat(pat, env, region)
-          val (exp,ev,updtExp) = elabExp(exp,env,region)
-          val exp = if lazyp  (* LAZY *)
-                then delayExp(forceExp exp)
-            else exp
 
-              (* tracking user (or "explicit") type variables *)
-          val tvref = ref []
-          fun updt tv: unit =
-        let fun a++b = union(a,b,error region)
-                    fun a--b = diff(a,b,error region)
-            val localtyvars = (ev++pv++etvs) -- (tv---etvs)
-             (* etvs should be the second argument to union
-              * to avoid having the explicit type variables
-              * instantiated by the union operation. *)
-            val downtyvars = localtyvars ++ (tv---etvs)
-         in tvref := TS.elements localtyvars; updtExp downtyvars
-            end
-
-              (* The following code propagates a PRIMOP access
-               * through a simple aliasing value binding.
-               * WARNING [ZHONG] This is an old hack and should be
-               * replaced. 
-           * [DBM] This won't apply if lazyp=true.
-               *)
-              fun stripMarksVar (MARKpat(p as VARpat _, reg)) = p
-                | stripMarksVar (MARKpat(p,reg)) = stripMarksVar p
-                | stripMarksVar (CONSTRAINTpat (p, ty)) =
-                    CONSTRAINTpat(stripMarksVar p, ty)
-                | stripMarksVar p = p
-
-          val pat = 
-        case stripExpAbs exp
-         of VARexp(ref(VALvar{prim,...}),_) =>
-                      (case prim
-                         of PrimOpId.Prim _ => 
-                    (case stripMarksVar pat
-                  of CONSTRAINTpat(VARpat(VALvar{path,typ,btvs,
-                                                             access,...}), ty) =>
-                     CONSTRAINTpat(
-                                   VARpat(
-                                     VALvar{path=path, typ=typ, access=access,
-                                            btvs = btvs, prim=prim}),
-                                   ty)
-                   | VARpat(VALvar{path, typ, btvs, access, ...}) =>
-                     VARpat(VALvar{path=path, typ=typ,
-                           btvs = btvs, access=access,
-                                               prim=prim})
-                   | _ => pat)
-                          | PrimOpId.NonPrim => pat)
-          | _ => pat
-
-       in (VALdec([VB{exp=exp, tyvars=tvref, pat=pat, boundtvs=[]}]), [pat], updt) 
-(* old version
-             case pat
-               of (VARpat _ | CONSTRAINTpat(VARpat _,_)) => (* variable pattern *)
-                   (VALdec([VB{exp=exp, tyvars=tvref, pat=pat, boundtvs=[]}]),
-                    [pat], updt) 
-                | _ => (* Nonvariable pattern binding will be "normalized"
-                        * into a more complex declaration using only
-                        * simple variable valbinds. See DEVNOTE/valbind.txt. *)
-           let val (newpat,oldvars,newvars) = aconvertPat(pat, compInfo)
-                 (* this is the only call of aconvertPat *)
-                       val newVarExps = map (fn v => VARexp(ref v,[])) newvars 
-               val r = RULE(newpat, TUPLEexp(newVarExps))
-                       val newexp = CASEexp(exp, completeBind[r], false)
-
-                    in case oldvars
-                        of [] => 
-                             let val nvb = VB{exp=newexp, tyvars=tvref,
-                                              pat=WILDpat, boundtvs=[]}
-                              in (VALdec [nvb], [], updt)
-                             end
-                         | _ => 
-                             let val newVar = newVALvar internalSym
-                                 val newVarPat = VARpat(newVar)
-                                 val newVarExp = VARexp(ref newVar, [])
-
-                                 val newVarDec = 
-                                     VALdec([VB{exp=newexp, tyvars=tvref, 
-                                                pat=newVarPat, boundtvs=[]}])
-
-                                 fun buildDec([], _, d) =  
-                                     LOCALdec(newVarDec, SEQdec(rev d))
-                                   | buildDec(vp::r, i, d) = 
-                                     let val nvb = VB{exp=TPSELexp(newVarExp,i),
-                                                      pat=vp, boundtvs=[],
-                                                      tyvars=ref[]}
-
-                                      in buildDec(r, i+1, VALdec([nvb])::d)
-                                     end
-
-                              in (buildDec(oldvars, 1, []), oldvars, updt)
-                             end
-                   end
-*)
-      end
-*)
+    and elabVb (region, env) (vb, rpt) =
+      (case vb
+         of MarkVb(vb, region) => elabVb (region, env) (vb, rpt)
+         | Vb {pat, exp, ...} =>
+             (elabPat (pat, env, PVal, region) >> elabExp (exp, env, Rhs, region)) rpt)
+           
 
 (*
     and elabVALdec(vb,etvs,env,rpath,region) =
@@ -1021,11 +922,8 @@ let
               end (* makevar *)
         val fundecs = map (makevar region) fb
         fun elabClause(region,({kind,argpats,resultty,exp,funsym}), rpt) =
-        let val rpt = elabPatList(argpats, env, region, PClause, rpt)
-            val rpt = elabExp(exp, env, Rhs, region, rpt)
-            val _ = debugmsg "linting clause"
-         in rpt
-        end
+           (elabPatList(argpats, env, PClause, region) >>
+            elabExp(exp, env, Rhs, region)) rpt
         fun elabFundec ((var,clauses,region),rpt) = 
           foldl (fn (c2,rpt) => elabClause(region,c2,rpt)) rpt clauses
         val rpt = foldl elabFundec rpt fundecs
