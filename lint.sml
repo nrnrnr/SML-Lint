@@ -29,6 +29,8 @@ infix 3 >>
 
 fun f >> g = g o f
 
+fun uncurry f (x, y) = f x y
+fun curry   f x y    = f (x, y)
 
 val say = Control_Print.say
 val debugging = ref false
@@ -186,41 +188,67 @@ let
     val patParse = Precedence.parse{apply=apply_pat, pair=tuple_pat}
 *)
 
+    datatype comma_syntax = Record | Tuple | List | Vector
+      (* things that have elements separated by commas *)
+
+    datatype common_context
+      = InfixChild
+      | Function
+      | Argument
+      | Element of comma_syntax
+      | Bracketed
+
+
     datatype pcontext
       = PClause
       | PVal
-      
+      | P of common_context
 
-    fun elabPat (p:Ast.pat, env, pcontext : pcontext, region:region) rpt =
-      (debugmsg "skipped pattern"; rpt)
+    datatype econtext
+      = Condition
+      | IfCase
+      | WhileCondition
+      | WhileBody
+      | Constraint
+      | Rhs
+      | Raise
+      | Handle
+      | LetBody
+      | E of common_context
 
+    fun atom region Bracketed rpt what =
+          let val (pos, _) = region
+          in  Report.brackets ("redundant parentheses around " ^ what, pos, rpt)
+          end
+      | atom _ _ rpt _ = rpt
+
+    fun eatom r (E c) rpt what = atom r c rpt what
+      | eatom _ _ rpt _ = rpt
+
+    fun patom r (P c) rpt what = atom r c rpt what
+      | patom _ _ rpt _ = rpt
+
+
+    fun elabPat (p:Ast.pat, env, context : pcontext, region:region) rpt =
+      let val atom = patom region context rpt
+          fun elab ctx pat rpt = elabPat (pat, env, ctx, region) rpt
+          val elem = P o Element
+      in
+      case p
+        of WildPat => atom "wildcard '_'"
+         | VarPat [_] => atom "name"
+         | VarPat _ => atom "qualified name"
+         | IntPat s => atom "integer literal"
+         | WordPat s => atom "word literal"
+         | StringPat s => atom "string literal"
+         | CharPat s => atom "character literal"
+         | RecordPat {def,flexibility} =>
+             foldl (uncurry (elab (elem Record) o snd)) (atom "record literal") def
+         | ListPat pats =>
+             foldl (uncurry (elab (elem List))) (atom "list literal") pats
+         | TuplePat pats =>
+             foldl (uncurry (elab (elem Tuple))) (atom "tuple literal") pats
 (*
-    exception FreeOrVars
-    fun elabPat(pat:Ast.pat, env:SE.staticEnv, region:region) 
-         : Absyn.pat * TS.tyvarset =
-      case pat
-      of WildPat => (WILDpat, TS.empty)
-       | VarPat path => 
-       (clean_pat (error region) 
-              (pat_id(SP.SPATH path, env, error region, compInfo)),
-        TS.empty)
-       | IntPat s => (INTpat(s,TU.mkLITERALty(T.INT,region)),TS.empty)
-       | WordPat s => (WORDpat(s,TU.mkLITERALty(T.WORD,region)),TS.empty)
-       | StringPat s => (STRINGpat s,TS.empty)
-       | CharPat s => (CHARpat s,TS.empty)
-       | RecordPat {def,flexibility} =>
-        let val (lps,tyv) = elabPLabel region env def
-        in (makeRECORDpat (lps,flexibility,error region),tyv) end
-       | ListPat nil =>
-          (NILpat, TS.empty)
-       | ListPat (a::rest) =>
-        let val (p, tyv) = elabPat(TuplePat[a,ListPat rest], env, region)
-         in (CONSpat p, tyv)
-        end
-       | TuplePat pats =>
-        let val (ps,tyv) = elabPatList(pats, env, region)
-         in (TUPLEpat ps,tyv)
-        end
        | VectorPat pats =>
         let val (ps,tyv) = elabPatList(pats, env, region)
         in (VECTORpat(ps,UNDEFty),tyv) end
@@ -333,7 +361,11 @@ let
         in (cMARKpat(p,region),tv)
        end
        | FlatAppPat pats => elabPat(patParse(pats,env,error), env, region) 
+*)
+             | _ => (debugmsg "skipped pattern"; rpt)
+      end
 
+(*
     and elabPLabel (region:region) (env:SE.staticEnv) labs =
     foldl
       (fn ((lb1,p1),(lps1,lvt1)) => 
@@ -355,23 +387,6 @@ let
 
     val expParse = Precedence.parse {apply=APPLY, infixapp=INFIX}
 
-    datatype context
-      = InfixChild
-      | Function
-      | Argument
-      | Condition
-      | IfCase
-      | WhileCondition
-      | WhileBody
-      | Constraint
-      | Rhs
-      | Element of comma_syntax
-      | Raise
-      | Handle
-      | Bracketed
-      | LetBody
-    and comma_syntax = Record | Tuple | List | Vector
-
     fun checkBracket region context rpt =
       case context
         of Rhs => Report.brackets("parens on RHS of function", fst region, rpt)
@@ -383,19 +398,19 @@ let
           let val (pos, _) = region
           in  Report.brackets ("redundant parentheses around " ^ what, pos, rpt)
           end
-      | atom _ _ rpt _ = (debugmsg "got atom"; rpt)
+      | atom _ _ rpt _ = rpt
 
-    fun elabExp(exp: Ast.exp, env: env, context: context, region: region) (rpt : Report.t) 
+    fun elabExp(exp: Ast.exp, env: env, context: econtext, region: region) (rpt : Report.t) 
         : Report.t =
-      let val atom = atom region context rpt
-          fun elab ctx exp rpt = elabExp (exp, env, ctx, region) rpt
-          fun uncurry f (x, y) = f x y
+      let val atom = eatom region context rpt
+          fun elab (ctx:econtext) exp rpt = elabExp (exp, env, ctx, region) rpt
+          val elem = E o Element
       in
     (case exp
       of BracketExp e =>
            let val rpt = checkBracket region context rpt
                val _ = debugmsg "brackets"
-           in  elab Bracketed e rpt
+           in  elab (E Bracketed) e rpt
            end
        | VarExp [sym] => atom "name"
        | VarExp _ => atom "qualified name"
@@ -405,7 +420,7 @@ let
        | StringExp s => atom "string literal"
        | CharExp s => atom "character literal"
        | RecordExp cells =>
-          foldl (uncurry (elab (Element Record) o snd))
+          foldl (uncurry (elab (elem Record) o snd))
                 (atom "record literal") cells
        | SeqExp exps =>
            (case exps
@@ -413,13 +428,13 @@ let
                | [] => bug "elabExp(SeqExp[])"
                | _ => elabExpList(exps,env,context,region,rpt))
        | ListExp exps =>
-          foldl (uncurry (elab (Element List))) (atom "list literal") exps
+          foldl (uncurry (elab (elem List))) (atom "list literal") exps
        | TupleExp exps =>
-          foldl (uncurry (elab (Element Tuple))) (atom "tuple literal") exps
+          foldl (uncurry (elab (elem Tuple))) (atom "tuple literal") exps
        | VectorExp exps =>
-          foldl (uncurry (elab (Element Vector))) (atom "vector literal") exps
+          foldl (uncurry (elab (elem Vector))) (atom "vector literal") exps
        | AppExp {function,argument} =>
-           elab Argument argument (elab Function function rpt)
+           elab (E Argument) argument (elab (E Function) function rpt)
        | ConstraintExp {expr=exp,constraint=ty} => elab Constraint exp rpt
 (*
        | HandleExp {expr,rules} =>
@@ -444,9 +459,9 @@ let
        | IfExp {test,thenCase,elseCase} =>
            (elab Condition test >> elab IfCase thenCase >> elab IfCase elseCase) rpt
        | AndalsoExp (exp1,exp2) =>
-           (elab InfixChild exp1 >> elab InfixChild exp2) rpt
+           (elab (E InfixChild) exp1 >> elab (E InfixChild) exp2) rpt
        | OrelseExp (exp1,exp2) =>
-           (elab InfixChild exp1 >> elab InfixChild exp2) rpt
+           (elab (E InfixChild) exp1 >> elab (E InfixChild) exp2) rpt
        | WhileExp {test,expr} =>
            (elab WhileCondition test >> elab WhileBody expr) rpt
 (*
@@ -475,9 +490,9 @@ let
       let fun elab exp context = elabInfix (exp, env, context, region)
       in  case exp
             of EXP e => elabExp (e, env, context, region) 
-             | APPLY (f, arg) => (elab f Function >> elab arg Argument) 
+             | APPLY (f, arg) => elab f (E Function) >> elab arg (E Argument)
              | INFIX (left, opr, right) =>
-                  (elab left InfixChild >> elabOpr opr >> elab right InfixChild) 
+                 elab left (E InfixChild) >> elabOpr opr >> elab right (E InfixChild)
       end
 
     and elabOpr (EXP e) =
