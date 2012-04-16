@@ -10,7 +10,8 @@ structure ReportErr : REPORT = struct
 
   fun brackets (msg, pos, m) =
     let val {fileName, line, column} = SourceMap.filepos m pos
-        val () = app eprint [fileName, ", line ", Int.toString line, ": ", msg, "\n"]
+        val () = app eprint [fileName, ", line ", Int.toString line,
+                             ", column ", Int.toString column, ": ", msg, "\n"]
     in  m
     end        
 

@@ -545,16 +545,16 @@ let
     and elabTb region (_, rpt) = (say "skipped tb"; rpt) (* BOGUS *)
 
     and elabDec'(dec,env,region,rpt) : fixenv * Report.t =
-      let fun here rpt = (env, rpt)
+      let fun lift rpt = (env, rpt)
       in
     (case dec 
-      of TypeDec tbs => here (foldl (elabTb region) rpt tbs)
+      of TypeDec tbs => lift (foldl (elabTb region) rpt tbs)
        | DatatypeDec x =>
            let val rpt = foldl (elabDb region) rpt (#datatycs x)
                val rpt = foldl (elabTb region) (rpt) (#withtycs x)
-           in  here rpt
+           in  lift rpt
            end
-       | DataReplDec(name,path) => here rpt
+       | DataReplDec(name,path) => lift rpt
        | AbstypeDec x =>
            let val rpt = foldl (elabDb region) rpt (#abstycs x)
                val rpt = foldl (elabTb region) rpt (#withtycs x)
@@ -562,10 +562,10 @@ let
            end
 (*
        | ExceptionDec ebs => elabEXCEPTIONdec(ebs,env,region)
-       | ValDec(vbs,_) => foldl (elabVb region) rpt vbs
 *)
+       | ValDec(vbs,_) => lift (foldl (elabVb (region, env)) rpt vbs)
        | FunDec(fbs,explicitTvs) =>
-           here (elabFUNdec(fbs,explicitTvs,env,region,rpt))
+           lift (elabFUNdec(fbs,explicitTvs,env,region,rpt))
 (*
        | ValrecDec(rvbs,explicitTvs) =>
            elabVALRECdec(rvbs,explicitTvs,env,rpath,region)
@@ -584,14 +584,14 @@ let
        | OvldDec dec  => elabOVERLOADdec(dec,env,rpath,region)
 *)
        | MarkDec(dec,region') => elabDec'(dec, env, region', rpt)
-       | StrDec strbs => here (elabStrbs(strbs, env, region, rpt))
+       | StrDec strbs => lift (elabStrbs(strbs, env, region, rpt))
        | AbsDec _ => bug "absdec"
        | FctDec _ => bug "fctdec"
        | SigDec _ => bug "sigdec"
 (*
        | FsigDec _ => bug "fsigdec")
 *)
-       | _ => (say "Skipped declaration\n"; here rpt))
+       | _ => (say "Skipped declaration\n"; lift rpt))
       end              
 
   and elabStrbs (strbs, env, region, rpt) =
@@ -673,9 +673,9 @@ let
     and elabVb (region, env) (vb, rpt) =
       (case vb
          of MarkVb(vb, region) => elabVb (region, env) (vb, rpt)
-         | Vb {pat, exp, ...} =>
+         | Vb {pat, exp, ...} => (debugmsg "linting vb"; 
              (elabPat (pat, env, PVal, region) >> elabExp (exp, env, Rhs, region)) rpt)
-           
+           )
 
 (*
     and elabVALdec(vb,etvs,env,rpath,region) =
@@ -922,8 +922,10 @@ let
               end (* makevar *)
         val fundecs = map (makevar region) fb
         fun elabClause(region,({kind,argpats,resultty,exp,funsym}), rpt) =
+(debugmsg "linting clause";
            (elabPatList(argpats, env, PClause, region) >>
             elabExp(exp, env, Rhs, region)) rpt
+)
         fun elabFundec ((var,clauses,region),rpt) = 
           foldl (fn (c2,rpt) => elabClause(region,c2,rpt)) rpt clauses
         val rpt = foldl elabFundec rpt fundecs
