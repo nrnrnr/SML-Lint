@@ -7,12 +7,12 @@ local structure EM = ErrorMsg
       open Absyn Ast 
       structure S = Symbol
       val bogusID = S.varSymbol "bogus ID"
-      fun badsource () = badsource ()
-      fun error x = ErrorMsg.error (badsource ()) x
       fun fst (x, y) = x
       fun snd (x, y) = y
 
       fun fixmap f {item=x, fixity=fix, region=r} = {item = f x, fixity=fix, region=r}
+
+
 
 in
 
@@ -91,7 +91,7 @@ fun stripExpAst(MarkExp(e,r'),r) = stripExpAst(e,r')
   | stripExpAst(FlatAppExp[{item,region,...}],r) = stripExpAst(item,region)
   | stripExpAst x = x
 
-fun ensureInfix getfix {item,fixity,region} =
+fun ensureInfix error getfix {item,fixity,region} =
    (case getfix fixity
      of Fixity.NONfix =>
           error region EM.COMPLAIN
@@ -100,7 +100,7 @@ fun ensureInfix getfix {item,fixity,region} =
       | _ => ();
     item)
 
-fun ensureNonfix getfix {item,fixity,region} =
+fun ensureNonfix error getfix {item,fixity,region} =
       (case (getfix fixity, fixity)
         of (Fixity.NONfix,_) => ()
          | (_,SOME sym) =>
@@ -111,9 +111,9 @@ fun ensureNonfix getfix {item,fixity,region} =
          | _ => bug "ensureNonfix";
        item)
 
-fun getname(MarkPat(p,region),_) = getname(p,region)
-  | getname(VarPat[v], _) = v
-  | getname(_, region) = 
+fun getname error (MarkPat(p,region),_) = getname error (p,region)
+  | getname error (VarPat[v], _) = v
+  | getname error (_, region) = 
            (error region EM.COMPLAIN "illegal function symbol in clause"
             EM.nullErrorBody;
             bogusID)
@@ -146,10 +146,10 @@ fun elabABSTYPEdec({abstycs,withtycs,body},env,rpt,
 
 
 (**** ELABORATE GENERAL (core) DECLARATIONS ****)
-and elabDec (dec, env, region, rpt) =
-    (**** COULD PASS ERROR HERE ****)
-
+and elabDec ({source}, dec, env, region, rpt) =
 let
+    fun error x = ErrorMsg.error source x
+
     val _ = debugmsg ">>ElabCore.elabDec"
 
     (**** TYPES ****)
@@ -962,8 +962,9 @@ let
               let fun getfix(SOME f) = lookFix(env,f)
                     | getfix NONE = Fixity.NONfix
 
-                  val ensureInfix  = ensureInfix  getfix
-                  val ensureNonfix = ensureNonfix getfix
+                  val ensureInfix  = ensureInfix  error getfix
+                  val ensureNonfix = ensureNonfix error getfix
+                  val getname = getname error
 
                   fun parse'({item=FlatAppPat[a,b as {region,...},c],...}
                                      ::rest) = 
