@@ -10,6 +10,8 @@ is
   report.sig
   report.sml
 
+  precedence.sml
+
 
 	$smlnj/viscomp/elabdata.cm
 	$smlnj/viscomp/basics.cm
