@@ -50,7 +50,7 @@ fun parse {apply,infixapp} =
                                       \operators of same precedence"
                                  EM.nullErrorBody
                   else ();
-                  parse'(NONf(infixapp(e3, e2, e1),r),(e4,f,SOME sym,err)))
+                  parse(NONf(infixapp(e3, e2, e1),r),(e4,f,SOME sym,err)))
 
         | parse(p as NONf _, (e',F.INfix(lbp,rbp),SOME sym,_)) = 
             INf(sym,rbp,e',p)
