@@ -331,17 +331,18 @@ let
               pair=fn (a,b) => TupleExp[a,b]}
 
     datatype context
-        = Infix_child
-        | Function
-        | Argument
-        | Condition
-        | IfBranch
-        | Constraint
-        | Rhs
-        | Element of comma_syntax
-        | Raise
-        | Handle
-        | Bracketed
+      = InfixChild
+      | Function
+      | Argument
+      | Condition
+      | IfCase
+      | Constraint
+      | Rhs
+      | Element of comma_syntax
+      | Raise
+      | Handle
+      | Bracketed
+      | LetBody
     and comma_syntax = Record | Tuple | List | Vector
 
     fun checkBracket region context rpt =
@@ -360,6 +361,8 @@ let
     fun elabExp(exp: Ast.exp, env: env, context: context, region: region, rpt : Report.t) 
         : Report.t =
       let val atom = atom region context rpt
+          fun elab ctx exp rpt = elabExp (exp, env, ctx, region, rpt)
+          fun uncurry f (x, y) = f x y
       in
     (case exp
       of BracketExp e =>
@@ -375,7 +378,7 @@ let
        | StringExp s => atom "string literal"
        | CharExp s => atom "character literal"
        | RecordExp cells =>
-          foldl (fn ((_, e), rpt) => elabExp(e, env, Element Record, region, rpt))
+          foldl (uncurry (elab (Element Record) o snd))
                 (atom "record literal") cells
        | SeqExp exps =>
            (case exps
@@ -383,36 +386,26 @@ let
                | [] => bug "elabExp(SeqExp[])"
                | _ => elabExpList(exps,env,context,region,rpt))
        | ListExp exps =>
-          foldl (fn (e, rpt) => elabExp(e, env, Element List, region, rpt))
-                (atom "list literal") exps
+          foldl (uncurry (elab (Element List))) (atom "list literal") exps
        | TupleExp exps =>
-          foldl (fn (e, rpt) => elabExp(e, env, Element Tuple, region, rpt))
-                (atom "tuple") exps
+          foldl (uncurry (elab (Element Tuple))) (atom "tuple literal") exps
        | VectorExp exps =>
-          foldl (fn (e, rpt) => elabExp(e, env, Element Vector, region, rpt))
-                (atom "vector literal") exps
+          foldl (uncurry (elab (Element Vector))) (atom "vector literal") exps
        | AppExp {function,argument} =>
-           let val rpt = elabExp(function, env, Function, region, rpt)
-               val rpt = elabExp(argument, env, Argument, region, rpt)
-           in  rpt
-           end
-       | ConstraintExp {expr=exp,constraint=ty} =>
-           elabExp(exp, env, Constraint, region, rpt)
-       | _ => rpt
-)end
+           elab Argument argument (elab Function function rpt)
+       | ConstraintExp {expr=exp,constraint=ty} => elab Constraint exp rpt
 (*
        | HandleExp {expr,rules} =>
            let val rpt = elabExp(expr, env, Handle, region, rpt)
            in  elabMatch(rules,env,region,rpt)
            end
+*)
        | RaiseExp exp => elabExp(exp, env, Raise, region, rpt)
        | LetExp {dec,expr} => 
-           let val (d1,e1,tv1,updt1) =
-              elabDec'(dec,env,IP.IPATH[],region)
-           val (e2,tv2,updt2) = elabExp(expr,SE.atop(e1,env),region)
-           fun updt tv = (updt1 tv;updt2 tv)
-        in (LETexp(d1,e2), union(tv1,tv2,error region),updt)
+           let val (env, rpt) = elabDec'(dec, env, region, rpt)
+           in  elabExp (expr, env, LetBody, region, rpt)
            end
+(*
        | CaseExp {expr,rules} =>
            let val (e1,tv1,updt1) = elabExp(expr,env,region)
            val (rls2,tv2,updt2) = elabMatch(rules,env,region)
@@ -420,15 +413,12 @@ let
         in (CASEexp (e1,completeMatch rls2, true),
             union(tv1,tv2,error region),updt)
            end
+*)
        | IfExp {test,thenCase,elseCase} =>
-           let val (e1,tv1,updt1) = elabExp(test,env,region)
-           and (e2,tv2,updt2) = elabExp(thenCase,env,region)
-           and (e3,tv3,updt3) = elabExp(elseCase,env,region)
-           fun updt tv = (updt1 tv;updt2 tv;updt3 tv)
-        in (Absyn.IFexp { test = e1, thenCase = e2, elseCase = e3 },
-            union(tv1,union(tv2,tv3,error region),error region),
-            updt)
+           let fun elab ctx exp rpt = elabExp (exp, env, ctx, region, rpt)
+           in  elab Condition test (elab IfCase thenCase (elab IfCase elseCase rpt))
            end
+(*
        | AndalsoExp (exp1,exp2) =>
            let val (e1,tv1,updt1) = elabExp(exp1,env,region)
            and (e2,tv2,updt2) = elabExp(exp2,env,region)
@@ -467,6 +457,9 @@ let
        | FlatAppExp items => elabExp(expParse(items,env,error),env,region))
 
 *)
+       | _ => (debugmsg "skipped expression"; rpt)
+)end
+
 (*
     and elabELabel(labs,env,region) =
     let val (les1,lvt1,updt1) =
