@@ -1,7 +1,3 @@
-    structure Precedence = struct
-        fun parse _ _ = raise Match
-    end
-                       
 functor LintFn (structure Report : REPORT where type name = Symbol.symbol
                                             and type pos  = SourceMap.charpos
                ) =
@@ -15,6 +11,9 @@ local structure EM = ErrorMsg
       fun error x = ErrorMsg.error (badsource ()) x
       fun fst (x, y) = x
       fun snd (x, y) = y
+
+      fun fixmap f {item=x, fixity=fix, region=r} = {item = f x, fixity=fix, region=r}
+
 in
 
 (*
@@ -25,6 +24,10 @@ infix  4 = <> > >= < <=
 infix  3 := o
 infix  0 before
 *)
+
+infix 3 >>
+
+fun f >> g = g o f
 
 local
     val left = [ (7, ["*", "/", "mod", "div"])
@@ -40,10 +43,23 @@ local
     fun addfix assoc ((prec, oprs), env) =
           foldl (fn (opr, env) => (sym opr, assoc prec) :: env) env oprs
 
+    type env = (Symbol.symbol * Fixity.fixity) list
+                       
+
+    fun lookup (sym, env) =
+      case List.find (fn (s, f) => Symbol.eq (sym, s)) env
+        of SOME (_, f) => f
+         | NONE => Fixity.NONfix
+
 in
-    val initEnv = []
+    val initEnv = [] : env
     val initEnv = foldl (addfix Fixity.infixleft)  initEnv left
     val initEnv = foldl (addfix Fixity.infixright) initEnv right
+
+
+    structure Precedence = PrecedenceFn(type env = env
+                                        val lookup = lookup)
+
 end
 
 
@@ -326,9 +342,12 @@ let
     (**** EXPRESSIONS ****)
 
 
-    val expParse = Precedence.parse
-             {apply=fn(f,a) => AppExp{function=f,argument=a},
-              pair=fn (a,b) => TupleExp[a,b]}
+    datatype fix_exp
+      = EXP   of Ast.exp
+      | INFIX of fix_exp * fix_exp * fix_exp
+      | APPLY of fix_exp * fix_exp
+
+    val expParse = Precedence.parse {apply=APPLY, infixapp=INFIX}
 
     datatype context
       = InfixChild
@@ -336,6 +355,8 @@ let
       | Argument
       | Condition
       | IfCase
+      | WhileCondition
+      | WhileBody
       | Constraint
       | Rhs
       | Element of comma_syntax
@@ -356,7 +377,7 @@ let
           let val (pos, _) = region
           in  Report.brackets ("redundant parentheses around " ^ what, pos, rpt)
           end
-      | atom _ _ rpt _ = rpt
+      | atom _ _ rpt _ = (debugmsg "got atom"; rpt)
 
     fun elabExp(exp: Ast.exp, env: env, context: context, region: region, rpt : Report.t) 
         : Report.t =
@@ -368,7 +389,7 @@ let
       of BracketExp e =>
            let val rpt = checkBracket region context rpt
                val _ = debugmsg "brackets"
-           in  rpt  (* sequence/infix not yet implemented *)
+           in  elab Bracketed e rpt
            end
        | VarExp [sym] => atom "name"
        | VarExp _ => atom "qualified name"
@@ -400,7 +421,7 @@ let
            in  elabMatch(rules,env,region,rpt)
            end
 *)
-       | RaiseExp exp => elabExp(exp, env, Raise, region, rpt)
+       | RaiseExp exp => elab Raise exp rpt
        | LetExp {dec,expr} => 
            let val (env, rpt) = elabDec'(dec, env, region, rpt)
            in  elabExp (expr, env, LetBody, region, rpt)
@@ -415,37 +436,21 @@ let
            end
 *)
        | IfExp {test,thenCase,elseCase} =>
-           let fun elab ctx exp rpt = elabExp (exp, env, ctx, region, rpt)
-           in  elab Condition test (elab IfCase thenCase (elab IfCase elseCase rpt))
-           end
-(*
+           (elab Condition test >> elab IfCase thenCase >> elab IfCase elseCase) rpt
        | AndalsoExp (exp1,exp2) =>
-           let val (e1,tv1,updt1) = elabExp(exp1,env,region)
-           and (e2,tv2,updt2) = elabExp(exp2,env,region)
-           fun updt tv = (updt1 tv;updt2 tv)
-        in (ANDALSOexp(e1, e2), union(tv1,tv2,error region),updt)
-           end
+           (elab InfixChild exp1 >> elab InfixChild exp2) rpt
        | OrelseExp (exp1,exp2) =>
-           let val (e1,tv1,updt1) = elabExp(exp1,env,region)
-           and (e2,tv2,updt2) = elabExp(exp2,env,region)
-           fun updt tv = (updt1 tv;updt2 tv)
-        in (ORELSEexp(e1, e2), union(tv1,tv2,error region),updt)
-           end
+           (elab InfixChild exp1 >> elab InfixChild exp2) rpt
        | WhileExp {test,expr} =>
-           let val (e1,tv1,updt1) = elabExp(test,env,region)
-           and (e2,tv2,updt2) = elabExp(expr,env,region)
-           fun updt tv = (updt1 tv;updt2 tv)
-        in (Absyn.WHILEexp { test = e1, expr = e2 },
-                    union(tv1,tv2,error region), updt)
-           end
+           (elab WhileCondition test >> elab WhileBody expr) rpt
+(*
        | FnExp rules => 
            let val (rls,tyv,updt) = elabMatch(rules,env,region)
         in (FNexp (completeMatch rls,UNDEFty),tyv,updt)
            end
-       | MarkExp (exp,region) => 
-           let val (e,tyv,updt) = elabExp(exp,env,region)
-        in (cMARKexp(e,region), tyv, updt)
-           end
+*)
+       | MarkExp (exp,region) => elabExp (exp, env, context, region, rpt)
+(*
        | SelectorExp s => 
            (let val v = newVALvar s
          in FNexp(completeMatch
@@ -454,11 +459,30 @@ let
                 cMARKexp(VARexp(ref v,[]),region))],UNDEFty)
         end,
         TS.empty, no_updt)
-       | FlatAppExp items => elabExp(expParse(items,env,error),env,region))
-
 *)
+       | FlatAppExp items =>
+           elabInfix(expParse(map (fixmap EXP) items,env,error),env,context,region,rpt)
        | _ => (debugmsg "skipped expression"; rpt)
 )end
+
+    and elabInfix (exp, env, context, region, rpt) =
+      let fun elab exp context rpt = elabInfix (exp, env, context, region, rpt)
+      in  case exp
+            of EXP e => elabExp(e, env, context, region, rpt)
+             | APPLY (f, arg) => (elab f Function >> elab arg Argument) rpt
+             | INFIX (left, opr, right) =>
+                  (elab left InfixChild >> elabOpr opr >> elab right InfixChild) rpt
+      end
+
+    and elabOpr (EXP e) =
+          let fun elab e =
+                case e
+                  of MarkExp (e, _) => elab e
+                   | VarExp _ => (fn rpt => rpt)
+                   | _ => bug "lint: syntactic form of infix operator"
+          in  elab e
+          end
+      | elabOpr _ = bug "lint: syntactic form of infix operator"
 
 (*
     and elabELabel(labs,env,region) =
