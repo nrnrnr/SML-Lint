@@ -13,6 +13,12 @@ local structure EM = ErrorMsg
       fun fixmap f {item=x, fixity=fix, region=r} = {item = f x, fixity=fix, region=r}
 
 
+    (* a slightly more convenient form of foldl *)
+    fun sequence f []      rpt = rpt
+      | sequence f (x::xs) rpt = sequence f xs (f x rpt)
+
+    val sequence : ('a -> 'b -> 'b) -> 'a list -> 'b -> 'b = sequence
+
 
 in
 
@@ -60,6 +66,8 @@ local
       case List.find (fn (s, f) => Symbol.eq (sym, s)) env
         of SOME (_, f) => f
          | NONE => Fixity.NONfix
+
+
 
 in
     val initEnv = [] : env
