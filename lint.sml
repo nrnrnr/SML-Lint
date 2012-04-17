@@ -203,6 +203,7 @@ let
       | Element of comma_syntax
       | Bracketed
       | Constrained (* under a type contraint  exp : ty *)
+      | Handle (* either pat or exp in  handle pat => exp | ... *)
 
       | HighLevel (* infix expression in an exp-specific context *)
 
@@ -219,7 +220,6 @@ let
       | WhileBody
       | Rhs
       | Raise
-      | Handle
       | LetBody
       | E of common_context
 
@@ -381,12 +381,8 @@ let
            elab (E Argument) argument (elab (E Function) function rpt)
        | ConstraintExp {expr=exp,constraint=ty} =>
            (elab (E Constrained) exp >> elabTy (ty, (), region)) rpt
-(*
        | HandleExp {expr,rules} =>
-           let val rpt = elabExp(expr, env, Handle, region) rpt
-           in  elabMatch(rules,env,region,rpt)
-           end
-*)
+           (elab (E Handle) expr >> elabMatch (rules, env, Handle, region)) rpt
        | RaiseExp exp => elab Raise exp rpt
        | LetExp {dec,expr} => 
            let val (env, rpt) = elabDec'(dec, env, region, rpt)
@@ -458,29 +454,15 @@ let
         fun updt tv: unit = app (fn f => f tv) updt1
      in (les1, lvt1, updt)
     end
-
-    and elabMatch(rs,env,region) =
-    let val (rs,lvt,updt1) =
-          foldr 
-        (fn (r1,(rs1,lvt1,updt1)) => 
-            let val (r2,lvt2,updt2) = elabRule(r1,env,region)
-             in (r2 :: rs1, union(lvt2,lvt1,error region), 
-                         updt2::updt1) 
-                    end)
-        ([],TS.empty,[]) rs
-        fun updt tv: unit = app (fn f => f tv) updt1
-     in (rs, lvt, updt)
-    end
-
-    and elabRule(Rule{pat,exp},env,region)  =
-    let val region' = case pat of MarkPat (p,reg) => reg | _ => region
-        val (p,tv1) = elabPat(pat, env, region)
-        val env' = SE.atop(bindVARp ([p],error region'), env)
-        val (e,tv2,updt) = elabExp(exp,env',region)
-     in (RULE(p,e),union(tv1,tv2,error region),updt)
-    end
-
 *)
+
+    and elabMatch (rs,env,context,region) =
+      sequence (fn (Rule {pat, exp}) => 
+                  elabPat (pat, env, P context, region) >>
+                  elabExp (exp, env, E context, region)) rs
+       (* XXX TODO: singleton matches special; others may recommend parens
+          at least in some contexts *)
+
     (**** SIMPLE DECLARATIONS ****)
 
     and elabDb region (_, rpt) = (say "skipped db"; rpt) (* BOGUS *)
