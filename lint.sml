@@ -211,6 +211,7 @@ let
     datatype pcontext
       = PClause
       | PVal
+      | POr   (* SML/NJ or-patterns *)
       | P of common_context
 
     datatype econtext
@@ -289,13 +290,13 @@ let
          | RecordPat {def,flexibility} =>
              foldl (uncurry (elab (elem Record) o snd)) (atom "record pattern") def
          | ListPat pats =>
-             foldl (uncurry (elab (elem List))) (atom "list pattern") pats
+             sequence (elab (elem List)) pats (atom "list pattern")
          | TuplePat pats =>
-             foldl (uncurry (elab (elem Tuple))) (atom "tuple pattern") pats
+             sequence (elab (elem Tuple)) pats (atom "tuple pattern")
          | VectorPat pats =>
-             foldl (uncurry (elab (elem Vector))) (atom "vector pattern") pats
+             sequence (elab (elem Vector)) pats (atom "vector pattern")
          | OrPat pats =>
-             foldl (uncurry (elab context)) rpt pats
+             sequence (elab POr) pats rpt
          | AppPat {constr, argument} =>
              (elab (P Function) constr >> elab (P Argument) argument) rpt
          | ConstraintPat {pattern=pat,constraint=ty} =>
@@ -364,19 +365,18 @@ let
        | StringExp s => atom "string literal"
        | CharExp s => atom "character literal"
        | RecordExp cells =>
-          foldl (uncurry (elab (elem Record) o snd))
-                (atom "record literal") cells
+           sequence (elab (elem Record) o snd) cells (atom "record literal")
        | SeqExp exps =>
            (case exps
               of [e] => elabExp (e,env,context,region) rpt
                | [] => bug "elabExp(SeqExp[])"
                | _ => elabExpList(exps,env,context,region,rpt))
        | ListExp exps =>
-          foldl (uncurry (elab (elem List))) (atom "list literal") exps
+           sequence (elab (elem List)) exps (atom "list literal")
        | TupleExp exps =>
-          foldl (uncurry (elab (elem Tuple))) (atom "tuple literal") exps
+           sequence (elab (elem Tuple)) exps (atom "tuple literal")
        | VectorExp exps =>
-          foldl (uncurry (elab (elem Vector))) (atom "vector literal") exps
+           sequence (elab (elem Vector)) exps (atom "vector literal")
        | AppExp {function,argument} =>
            elab (E Argument) argument (elab (E Function) function rpt)
        | ConstraintExp {expr=exp,constraint=ty} =>
