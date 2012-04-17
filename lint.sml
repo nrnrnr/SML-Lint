@@ -161,6 +161,7 @@ let
     datatype tycontext
         = Exn
         | Constructor
+        | TConstraint
         
     fun elabTy region tcontext ty rpt = rpt
 
@@ -193,6 +194,7 @@ let
       | Argument
       | Element of comma_syntax
       | Bracketed
+      | Constrained (* under a type contraint  exp : ty *)
 
       | HighLevel (* infix expression in an exp-specific context *)
 
@@ -207,7 +209,6 @@ let
       | IfCase
       | WhileCondition
       | WhileBody
-      | Constraint
       | Rhs
       | Raise
       | Handle
@@ -261,6 +262,9 @@ let
       | patom _ _ rpt _ = rpt
 
 
+    fun elabTy (tau, tcontext, region) rpt =
+      (debugmsg "skipped type"; rpt)
+
     fun elabPat (p:Ast.pat, env, context : pcontext, region:region) rpt =
       let val atom = patom region context rpt
           fun elab ctx pat rpt = elabPat (pat, env, ctx, region) rpt
@@ -284,14 +288,11 @@ let
              foldl (uncurry (elab (elem Vector))) (atom "vector pattern") pats
          | OrPat pats =>
              foldl (uncurry (elab context)) rpt pats
-(*
          | AppPat {constr, argument} =>
-             (elab (P Function) >> elab (P Argument) argument) rpt
-       | ConstraintPat {pattern=pat,constraint=ty} =>
-           let val (p1,tv1) = elabPat(pat, env, region)
-               val (t2,tv2) = ET.elabType(ty,env,error,region)
-            in (CONSTRAINTpat(p1,t2), union(tv1,tv2,error region))
-           end
+             (elab (P Function) constr >> elab (P Argument) argument) rpt
+         | ConstraintPat {pattern=pat,constraint=ty} =>
+             (elab (P Constrained) pat >> elabTy (ty, (), region)) rpt
+(*
        | LayeredPat {varPat,expPat} =>
            let val (p1,tv1) = elabPat(varPat, env, region)
                val (p2,tv2) = elabPat(expPat, env, region)
@@ -370,7 +371,8 @@ let
           foldl (uncurry (elab (elem Vector))) (atom "vector literal") exps
        | AppExp {function,argument} =>
            elab (E Argument) argument (elab (E Function) function rpt)
-       | ConstraintExp {expr=exp,constraint=ty} => elab Constraint exp rpt
+       | ConstraintExp {expr=exp,constraint=ty} =>
+           (elab (E Constrained) exp >> elabTy (ty, (), region)) rpt
 (*
        | HandleExp {expr,rules} =>
            let val rpt = elabExp(expr, env, Handle, region) rpt
