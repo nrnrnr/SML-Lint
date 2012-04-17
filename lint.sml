@@ -198,6 +198,8 @@ let
       | Element of comma_syntax
       | Bracketed
 
+      | HighLevel (* infix expression in an exp-specific context *)
+
 
     datatype pcontext
       = PClause
@@ -215,6 +217,26 @@ let
       | Handle
       | LetBody
       | E of common_context
+
+    fun unE (E context) = context
+      | unE _ = HighLevel
+
+    datatype 'a infixed
+      = ATOM  of 'a
+      | INFIX of 'a infixed * 'a infixed * 'a infixed
+      | APPLY of 'a infixed * 'a infixed
+
+    fun elabInfix elabOpr atom wrap (thing, env, context, region) =
+      let fun elab thing context =
+                elabInfix elabOpr atom wrap (thing, env, context, region)
+      in  case thing
+            of ATOM a => atom (a, env, wrap context, region) 
+             | APPLY (f, arg) => elab f Function >> elab arg Argument
+             | INFIX (left, opr, right) =>
+                 elab left InfixChild >> elabOpr opr >> elab right InfixChild
+      end
+
+
 
     fun atom region Bracketed rpt what =
           let val (pos, _) = region
@@ -243,123 +265,44 @@ let
          | StringPat s => atom "string literal"
          | CharPat s => atom "character literal"
          | RecordPat {def,flexibility} =>
-             foldl (uncurry (elab (elem Record) o snd)) (atom "record literal") def
+             foldl (uncurry (elab (elem Record) o snd)) (atom "record pattern") def
          | ListPat pats =>
-             foldl (uncurry (elab (elem List))) (atom "list literal") pats
+             foldl (uncurry (elab (elem List))) (atom "list pattern") pats
          | TuplePat pats =>
-             foldl (uncurry (elab (elem Tuple))) (atom "tuple literal") pats
+             foldl (uncurry (elab (elem Tuple))) (atom "tuple pattern") pats
+         | VectorPat pats =>
+             foldl (uncurry (elab (elem Vector))) (atom "vector pattern") pats
+         | OrPat pats =>
+             foldl (uncurry (elab context)) rpt pats
 (*
-       | VectorPat pats =>
-        let val (ps,tyv) = elabPatList(pats, env, region)
-        in (VECTORpat(ps,UNDEFty),tyv) end
-       | OrPat pats =>
-         (* Check that the sub-patterns of an or-pattern have exactly the same
-          * free variables, and rewrite the sub-pattersn so that all instances
-          * of a given free variable have the same type ref and the same 
-          * access.
-          *)
-       let val (ps, tyv) = elabPatList(pats, env, region)
-           fun freeOrVars (pat::pats) =
-           let val tbl : (access * ty ref * int) Tbl.hash_table =
-               Tbl.mkTable (16, FreeOrVars)
-               fun ins kv = Tbl.insert tbl kv
-               fun look k = Tbl.lookup tbl k
-               fun errorMsg x = 
-                 error region EM.COMPLAIN
-                   ("variable " ^ S.name x ^
-                    " does not occur in all branches of or-pattern")
-                   EM.nullErrorBody
-               fun insFn (id, access, tyref) =
-               (ins(id, (access, tyref, 1)); (access,tyref))
-               fun bumpFn (id, access0, tyref0) =
-               (let val (access, tyref, n) = look id
-                 in ins (id, (access, tyref, n+1)); (access,tyref)
-                end
-                handle FreeOrVars => 
-                    (errorMsg id; (access0,tyref0)))
-               fun checkFn (id, access0, tyref0) = 
-                           (let val (access, tyref, _) = look id 
-                             in (access, tyref) 
-                            end
-                handle FreeOrVars => 
-                   (errorMsg id; (access0, tyref0)))
-               fun doPat(insFn: (S.symbol*access*ty ref)
-                                          ->access*ty ref) =
-               let fun doPat' (VARpat(VALvar{access, prim, path, 
-                                                         btvs, typ})) =
-                     let val (access,typ) = 
-                     insFn(SymPath.first path,access,typ)
-                      in VARpat(VALvar{access=access, 
-                                                       path=path,prim=prim,
-                               btvs = btvs,
-                               typ=typ})
-                     end
-                 | doPat' (RECORDpat{fields, flex, typ}) =
-                     RECORDpat
-                       {fields = 
-                                            map (fn (l, p) => (l, doPat' p))
-                             fields,
-                    flex = flex, typ = typ}
-                 | doPat' (APPpat(dc, ty, pat)) =
-                     APPpat(dc, ty, doPat' pat)
-                 | doPat' (CONSTRAINTpat(pat, ty)) =
-                     CONSTRAINTpat(doPat' pat, ty)
-                 | doPat' (LAYEREDpat(p1, p2)) =
-                     LAYEREDpat(doPat' p1, doPat' p2)
-                 | doPat' (ORpat(p1, p2)) =
-                     ORpat(doPat' p1, doPat checkFn p2)
-                 | doPat' (VECTORpat(pats, ty)) =
-                     VECTORpat(map doPat' pats, ty)
-                 | doPat' (MARKpat(pat, region)) =
-                     doPat' pat  (*?? *)
-                 | doPat' pat = pat
-                  in doPat'
-                 end
-             (* check that each variable occurs in each sub-pattern *)
-               fun checkComplete m (id, (_, _, n:int)) =
-               if (n = m) then () else (errorMsg id)
-               val pats = (doPat insFn pat) :: 
-                                     (map (doPat bumpFn) pats)
-            in Tbl.appi (checkComplete (length pats)) tbl;
-               pats
-           end (* freeOrVars *)
-         | freeOrVars _ = bug "freeOrVars"
-           val (pat, pats) =
-           case freeOrVars ps of
-               (h::t) => (h, t)
-             | _ => bug "elabPat:no free or vars"
-           fun foldOr (p, []) = p
-         | foldOr (p, p'::r) = ORpat(p, foldOr(p', r))
-        in (foldOr(pat, pats), tyv)
-       end
-       | AppPat {constr, argument} =>
-       let fun getVar (MarkPat(p,region),region') = getVar(p,region)
-         | getVar (VarPat path, region') = 
-              let val dcb = pat_id (SP.SPATH path, env, 
-                                            error region', compInfo)
-              val (p,tv) = elabPat(argument, env, region)
-              in (makeAPPpat (error region) (dcb,p),tv) end
-         | getVar (_, region') = 
-           (error region' EM.COMPLAIN 
-             "non-constructor applied to argument in pattern"
-             EM.nullErrorBody;
-            (WILDpat,TS.empty))
-        in getVar(constr,region)
-       end
+         | AppPat {constr, argument} =>
+             let fun getVar (MarkPat(p,region),region') = getVar(p,region)
+               | getVar (VarPat path, region') = 
+                    let val dcb = pat_id (SP.SPATH path, env, 
+                                                  error region', compInfo)
+                    val (p,tv) = elabPat(argument, env, region)
+                    in (makeAPPpat (error region) (dcb,p),tv) end
+               | getVar (_, region') = 
+                 (error region' EM.COMPLAIN 
+                   "non-constructor applied to argument in pattern"
+                   EM.nullErrorBody;
+                  (WILDpat,TS.empty))
+              in getVar(constr,region)
+             end
        | ConstraintPat {pattern=pat,constraint=ty} =>
-       let val (p1,tv1) = elabPat(pat, env, region)
-           val (t2,tv2) = ET.elabType(ty,env,error,region)
-        in (CONSTRAINTpat(p1,t2), union(tv1,tv2,error region))
-       end
+           let val (p1,tv1) = elabPat(pat, env, region)
+               val (t2,tv2) = ET.elabType(ty,env,error,region)
+            in (CONSTRAINTpat(p1,t2), union(tv1,tv2,error region))
+           end
        | LayeredPat {varPat,expPat} =>
-       let val (p1,tv1) = elabPat(varPat, env, region)
-           val (p2,tv2) = elabPat(expPat, env, region)
-        in (makeLAYEREDpat(p1,p2,error region),union(tv1,tv2,error region))
-       end
+           let val (p1,tv1) = elabPat(varPat, env, region)
+               val (p2,tv2) = elabPat(expPat, env, region)
+            in (makeLAYEREDpat(p1,p2,error region),union(tv1,tv2,error region))
+           end
+*)
        | MarkPat (pat,region) =>
-       let val (p,tv) = elabPat(pat, env, region)
-        in (cMARKpat(p,region),tv)
-       end
+             elabPat (pat, env, context, region) rpt
+(*
        | FlatAppPat pats => elabPat(patParse(pats,env,error), env, region) 
 *)
              | _ => (debugmsg "skipped pattern"; rpt)
@@ -380,10 +323,6 @@ let
     (**** EXPRESSIONS ****)
 
 
-    datatype fix_exp
-      = EXP   of Ast.exp
-      | INFIX of fix_exp * fix_exp * fix_exp
-      | APPLY of fix_exp * fix_exp
 
     val expParse = Precedence.parse {apply=APPLY, infixapp=INFIX}
 
@@ -482,20 +421,21 @@ let
         TS.empty, no_updt)
 *)
        | FlatAppExp items =>
-           elabInfix(expParse(map (fixmap EXP) items,env,error),env,context,region)rpt
+           elabInfix elabOpr elabExp E
+           (expParse(map (fixmap ATOM) items,env,error),env,unE context,region) rpt
        | _ => (debugmsg "skipped expression"; rpt)
 )end
 
-    and elabInfix (exp, env, context, region) =
-      let fun elab exp context = elabInfix (exp, env, context, region)
+    and elabInfix' (exp, env, context, region) =
+      let fun elab exp context = elabInfix' (exp, env, context, region)
       in  case exp
-            of EXP e => elabExp (e, env, context, region) 
+            of ATOM e => elabExp (e, env, context, region) 
              | APPLY (f, arg) => elab f (E Function) >> elab arg (E Argument)
              | INFIX (left, opr, right) =>
                  elab left (E InfixChild) >> elabOpr opr >> elab right (E InfixChild)
       end
 
-    and elabOpr (EXP e) =
+    and elabOpr (ATOM e) =
           let fun elab e =
                 case e
                   of MarkExp (e, _) => elab e
