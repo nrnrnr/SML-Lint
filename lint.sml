@@ -225,6 +225,7 @@ let
       | Raise
       | LetBody
       | Scrutinee   (* exp in case exp of ... *)
+      | Sequent     (* exp in (exp1 ; exp2 ; ... ; expn) *)
       | E of common_context
 
     fun unE (E context) = context
@@ -304,32 +305,17 @@ let
              (elab (P Function) constr >> elab (P Argument) argument) rpt
          | ConstraintPat {pattern=pat,constraint=ty} =>
              (elab (P Constrained) pat >> elabTy (ty, (), region)) rpt
-(*
-       | LayeredPat {varPat,expPat} =>
-           let val (p1,tv1) = elabPat(varPat, env, region)
-               val (p2,tv2) = elabPat(expPat, env, region)
-            in (makeLAYEREDpat(p1,p2,error region),union(tv1,tv2,error region))
-           end
-*)
-       | MarkPat (pat,region) =>
+         | LayeredPat {varPat,expPat} =>
+             (elab (P InfixChild) varPat >> elab (P InfixChild) expPat) rpt
+         | MarkPat (pat,region) =>
              elabPat (pat, env, context, region) rpt
-       | FlatAppPat pats =>
-           elabInfix patVarOnly P elabPat
-           (parse(map (fixmap ATOM) pats,env,error), env, unP context, region) rpt
-       | _ => (debugmsg "skipped pattern"; rpt)
+         | FlatAppPat pats =>
+             elabInfix patVarOnly P elabPat
+             (parse(map (fixmap ATOM) pats,env,error), env, unP context, region) rpt
       end
 
-(*
-    and elabPLabel (region:region) (env:SE.staticEnv) labs =
-    foldl
-      (fn ((lb1,p1),(lps1,lvt1)) => 
-          let val (p2,lvt2) = elabPat(p1, env, region)
-          in ((lb1,p2) :: lps1, union(lvt2,lvt1,error region)) end)
-      ([],TS.empty) labs
-
-*)
     and elabPatList(ps, env, context, region:region) rpt =
-      foldr (fn (p1,rpt) => elabPat (p1, env, context, region) rpt) rpt ps
+      sequence (fn p => elabPat (p, env, context, region)) ps rpt
 
     (**** EXPRESSIONS ****)
 
@@ -369,11 +355,8 @@ let
        | CharExp s => atom "character literal"
        | RecordExp cells =>
            sequence (elab (elem Record) o snd) cells (atom "record literal")
-       | SeqExp exps =>
-           (case exps
-              of [e] => elabExp (e,env,context,region) rpt
-               | [] => bug "elabExp(SeqExp[])"
-               | _ => elabExpList(exps,env,context,region,rpt))
+       | SeqExp [e] => elab context e rpt
+       | SeqExp exps => sequence (elab Sequent) exps rpt
        | ListExp exps =>
            sequence (elab (elem List)) exps (atom "list literal")
        | TupleExp exps =>
@@ -423,18 +406,6 @@ let
      in (les1, lvt1, updt)
     end
 
-    and elabExpList(es,env,region) =
-    let val (les1,lvt1,updt1) =
-          foldr 
-        (fn (e2,(es2,lvt2,updts2)) => 
-            let val (e3,lvt3,updt3) = elabExp(e2,env,region)
-             in (e3 :: es2, union(lvt3,lvt2,error region), 
-                         updt3 :: updts2)
-            end)
-        ([],TS.empty,[]) es
-        fun updt tv: unit = app (fn f => f tv) updt1
-     in (les1, lvt1, updt)
-    end
 *)
 
     and elabMatch (rs,env,context,region) =
@@ -827,10 +798,9 @@ let
               end (* makevar *)
         val fundecs = map (makevar region) fb
         fun elabClause(region,({kind,argpats,resultty,exp,funsym}), rpt) =
-(debugmsg "linting clause";
-           (elabPatList(argpats, env, PClause, region) >>
+           (sequence (fn p => elabPat (p, env, PClause, region)) argpats >>
             elabExp(exp, env, Rhs, region)) rpt
-)
+
         fun elabFundec ((var,clauses,region),rpt) = 
           foldl (fn (c2,rpt) => elabClause(region,c2,rpt)) rpt clauses
         val rpt = foldl elabFundec rpt fundecs
@@ -855,7 +825,6 @@ let
     val _ = debugmsg ("EC.elabDec calling elabDec' - foo")
     val (dec',env',tyvars,tyvUpdate) = elabDec'(dec,env,rpath,region)
 *)
-    and elabExpList x = unimp "elabExpList" x
 
  in elabDec' (dec, env, region, rpt)
 
