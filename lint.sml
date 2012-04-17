@@ -184,10 +184,6 @@ let
       MarkPat(TuplePat[a,b],(l,r))
       | tuple_pat (a,b) = TuplePat[a,b]
 
-(*
-    val patParse = Precedence.parse{apply=apply_pat, pair=tuple_pat}
-*)
-
     datatype comma_syntax = Record | Tuple | List | Vector
       (* things that have elements separated by commas *)
 
@@ -221,22 +217,36 @@ let
     fun unE (E context) = context
       | unE _ = HighLevel
 
+    fun unP (P context) = context
+      | unP _ = HighLevel
+
     datatype 'a infixed
       = ATOM  of 'a
       | INFIX of 'a infixed * 'a infixed * 'a infixed
       | APPLY of 'a infixed * 'a infixed
 
-    fun elabInfix elabOpr atom wrap (thing, env, context, region) =
+    fun parse items = Precedence.parse {apply=APPLY, infixapp=INFIX} items
+
+    fun elabOpr varOnly (ATOM a) = varOnly a
+      | elabOpr _ _ = bug "lint: syntactic form of infix operator"
+
+    fun expVarOnly (VarExp _) = (fn rpt => rpt)
+      | expVarOnly (MarkExp (e, _)) = expVarOnly e
+      | expVarOnly _ =  bug "lint: syntactic form of infix operator"
+
+    fun patVarOnly (VarPat _) = (fn rpt => rpt)
+      | patVarOnly (MarkPat (p, _)) = patVarOnly p
+      | patVarOnly _ =  bug "lint: syntactic form of infix operator in pattern"
+
+    fun elabInfix varOnly wrap atom (thing, env, context, region) =
       let fun elab thing context =
-                elabInfix elabOpr atom wrap (thing, env, context, region)
+                elabInfix varOnly wrap atom (thing, env, context, region)
       in  case thing
             of ATOM a => atom (a, env, wrap context, region) 
              | APPLY (f, arg) => elab f Function >> elab arg Argument
              | INFIX (left, opr, right) =>
-                 elab left InfixChild >> elabOpr opr >> elab right InfixChild
+                 elab left InfixChild >> elabOpr varOnly opr >> elab right InfixChild
       end
-
-
 
     fun atom region Bracketed rpt what =
           let val (pos, _) = region
@@ -276,19 +286,7 @@ let
              foldl (uncurry (elab context)) rpt pats
 (*
          | AppPat {constr, argument} =>
-             let fun getVar (MarkPat(p,region),region') = getVar(p,region)
-               | getVar (VarPat path, region') = 
-                    let val dcb = pat_id (SP.SPATH path, env, 
-                                                  error region', compInfo)
-                    val (p,tv) = elabPat(argument, env, region)
-                    in (makeAPPpat (error region) (dcb,p),tv) end
-               | getVar (_, region') = 
-                 (error region' EM.COMPLAIN 
-                   "non-constructor applied to argument in pattern"
-                   EM.nullErrorBody;
-                  (WILDpat,TS.empty))
-              in getVar(constr,region)
-             end
+             (elab (P Function) >> elab (P Argument) argument) rpt
        | ConstraintPat {pattern=pat,constraint=ty} =>
            let val (p1,tv1) = elabPat(pat, env, region)
                val (t2,tv2) = ET.elabType(ty,env,error,region)
@@ -302,10 +300,10 @@ let
 *)
        | MarkPat (pat,region) =>
              elabPat (pat, env, context, region) rpt
-(*
-       | FlatAppPat pats => elabPat(patParse(pats,env,error), env, region) 
-*)
-             | _ => (debugmsg "skipped pattern"; rpt)
+       | FlatAppPat pats =>
+           elabInfix patVarOnly P elabPat
+           (parse(map (fixmap ATOM) pats,env,error), env, unP context, region) rpt
+       | _ => (debugmsg "skipped pattern"; rpt)
       end
 
 (*
@@ -323,8 +321,6 @@ let
     (**** EXPRESSIONS ****)
 
 
-
-    val expParse = Precedence.parse {apply=APPLY, infixapp=INFIX}
 
     fun checkBracket region context rpt =
       case context
@@ -421,29 +417,10 @@ let
         TS.empty, no_updt)
 *)
        | FlatAppExp items =>
-           elabInfix elabOpr elabExp E
-           (expParse(map (fixmap ATOM) items,env,error),env,unE context,region) rpt
+           elabInfix expVarOnly E elabExp
+           (parse(map (fixmap ATOM) items,env,error),env,unE context,region) rpt
        | _ => (debugmsg "skipped expression"; rpt)
 )end
-
-    and elabInfix' (exp, env, context, region) =
-      let fun elab exp context = elabInfix' (exp, env, context, region)
-      in  case exp
-            of ATOM e => elabExp (e, env, context, region) 
-             | APPLY (f, arg) => elab f (E Function) >> elab arg (E Argument)
-             | INFIX (left, opr, right) =>
-                 elab left (E InfixChild) >> elabOpr opr >> elab right (E InfixChild)
-      end
-
-    and elabOpr (ATOM e) =
-          let fun elab e =
-                case e
-                  of MarkExp (e, _) => elab e
-                   | VarExp _ => (fn rpt => rpt)
-                   | _ => bug "lint: syntactic form of infix operator"
-          in  elab e
-          end
-      | elabOpr _ = bug "lint: syntactic form of infix operator"
 
 (*
     and elabELabel(labs,env,region) =
