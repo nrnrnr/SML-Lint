@@ -204,6 +204,8 @@ let
       | Bracketed
       | Constrained (* under a type contraint  exp : ty *)
       | Handle (* either pat or exp in  handle pat => exp | ... *)
+      | CaseMatch (* either pat or exp in  case e of pat => exp | ... *)
+      | FnMatch (* either pat or exp in  fn pat => exp | ... *)
 
       | HighLevel (* infix expression in an exp-specific context *)
 
@@ -222,6 +224,7 @@ let
       | Rhs
       | Raise
       | LetBody
+      | Scrutinee   (* exp in case exp of ... *)
       | E of common_context
 
     fun unE (E context) = context
@@ -388,15 +391,8 @@ let
            let val (env, rpt) = elabDec'(dec, env, region, rpt)
            in  elabExp (expr, env, LetBody, region) rpt
            end
-(*
        | CaseExp {expr,rules} =>
-           let val (e1,tv1,updt1) = elabExp(expr,env,region)
-           val (rls2,tv2,updt2) = elabMatch(rules,env,region)
-           fun updt tv = (updt1 tv;updt2 tv)
-        in (CASEexp (e1,completeMatch rls2, true),
-            union(tv1,tv2,error region),updt)
-           end
-*)
+           (elab Scrutinee expr >> elabMatch (rules, env, CaseMatch, region)) rpt
        | IfExp {test,thenCase,elseCase} =>
            (elab Condition test >> elab IfCase thenCase >> elab IfCase elseCase) rpt
        | AndalsoExp (exp1,exp2) =>
@@ -405,27 +401,12 @@ let
            (elab (E InfixChild) exp1 >> elab (E InfixChild) exp2) rpt
        | WhileExp {test,expr} =>
            (elab WhileCondition test >> elab WhileBody expr) rpt
-(*
-       | FnExp rules => 
-           let val (rls,tyv,updt) = elabMatch(rules,env,region)
-        in (FNexp (completeMatch rls,UNDEFty),tyv,updt)
-           end
-*)
+       | FnExp rules => elabMatch (rules, env, FnMatch, region) rpt
        | MarkExp (exp,region) => elabExp (exp, env, context, region) rpt
-(*
-       | SelectorExp s => 
-           (let val v = newVALvar s
-         in FNexp(completeMatch
-              [RULE(RECORDpat{fields=[(s,VARpat v)], flex=true,
-                      typ= ref UNDEFty},
-                cMARKexp(VARexp(ref v,[]),region))],UNDEFty)
-        end,
-        TS.empty, no_updt)
-*)
+       | SelectorExp s => atom "record selector"
        | FlatAppExp items =>
            elabInfix expVarOnly E elabExp
            (parse(map (fixmap ATOM) items,env,error),env,unE context,region) rpt
-       | _ => (debugmsg "skipped expression"; rpt)
 )end
 
 (*
