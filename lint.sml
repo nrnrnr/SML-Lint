@@ -406,9 +406,7 @@ let
                val rpt = foldl (elabTb region) rpt (#withtycs x)
            in  elabDec' (#body x, env, region, rpt)
            end
-(*
-       | ExceptionDec ebs => elabEXCEPTIONdec(ebs,env,region)
-*)
+       | ExceptionDec ebs => (lift o sequence (elabEb region) ebs) rpt
        | ValDec(vbs,_) => lift (foldl (elabVb (region, env)) rpt vbs)
        | FunDec(fbs,explicitTvs) =>
            lift (elabFUNdec(fbs,explicitTvs,env,region,rpt))
