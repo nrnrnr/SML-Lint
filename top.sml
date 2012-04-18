@@ -18,4 +18,8 @@ structure Lint = struct
           of MLParser.PARSE dec => SOME (lint source dec; dec)
            | _ => NONE
     end
+
+
+  fun run (prog, argv) =
+    (app (ignore o parse) argv; OS.Process.success)
 end
