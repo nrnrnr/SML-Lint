@@ -192,7 +192,7 @@ let
       | Function
       | Argument
       | Element of comma_syntax
-      | Bracketed
+      | Bracketed of region (* retains location of brackets *)
       | Constrained (* under a type contraint  exp : ty *)
       | Handle (* either pat or exp in  handle pat => exp | ... *)
       | CaseMatch (* either pat or exp in  case e of pat => exp | ... *)
@@ -253,21 +253,21 @@ let
                  elab left InfixChild >> elabOpr varOnly opr >> elab right InfixChild
       end
 
-    fun atom region Bracketed rpt what =
+    fun atom (Bracketed region) rpt what =
           let val (pos, _) = region
           in  Report.brackets ("redundant parentheses around " ^ what, pos, rpt)
           end
-      | atom _ _ rpt _ = rpt
+      | atom _ rpt _ = rpt
 
-    fun eatom r (E c) rpt what = atom r c rpt what
-      | eatom _ _ rpt _ = rpt
+    fun eatom (E c) rpt what = atom c rpt what
+      | eatom _ rpt _ = rpt
 
-    fun patom r (P c) rpt what = atom r c rpt what
-      | patom _ _ rpt _ = rpt
+    fun patom (P c) rpt what = atom c rpt what
+      | patom _ rpt _ = rpt
 
 
     fun elabPat (p:Ast.pat, env, context : pcontext, region:region) rpt =
-      let val atom = patom region context rpt
+      let val atom = patom context rpt
           fun elab ctx pat rpt = elabPat (pat, env, ctx, region) rpt
           val elem = P o Element
       in
@@ -316,15 +316,9 @@ let
 
     type env = fixenv
 
-    fun atom region Bracketed rpt what =
-          let val (pos, _) = region
-          in  Report.brackets ("redundant parentheses around " ^ what, pos, rpt)
-          end
-      | atom _ _ rpt _ = rpt
-
     fun elabExp(exp: Ast.exp, env: env, context: econtext, region: region) (rpt : Report.t) 
         : Report.t =
-      let val atom = eatom region context rpt
+      let val atom = eatom context rpt
           fun elab (ctx:econtext) exp rpt = elabExp (exp, env, ctx, region) rpt
           val elem = E o Element
       in
@@ -332,7 +326,7 @@ let
       of BracketExp e =>
            let val rpt = checkBracket region context rpt
                val _ = debugmsg "brackets"
-           in  elab (E Bracketed) e rpt
+           in  elab (E (Bracketed region)) e rpt
            end
        | VarExp [sym] => atom "name"
        | VarExp _ => atom "qualified name"

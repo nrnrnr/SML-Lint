@@ -13,7 +13,7 @@ structure Lint = struct
   fun parse filename =
     let val fd = TextIO.openIn (filename)
         val dev = PrettyPrintNew.defaultDevice
-        val source = Source.newSource (filename, fd, false, (dev))
+        val source = Source.newSource (filename, fd, false, (     dev))
     in  case MLParser.parse source ()
           of MLParser.PARSE dec => SOME (lint source dec; dec)
            | _ => NONE
