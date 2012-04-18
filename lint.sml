@@ -33,6 +33,8 @@ infix  0 before
 
 infix 3 >>
 
+fun id x = x
+
 fun f >> g = g o f
 
 fun elabOpt f NONE     rpt = rpt
@@ -402,7 +404,7 @@ let
       of TypeDec tbs => lift (foldl (elabTb region) rpt tbs)
        | DatatypeDec x =>
            let val rpt = foldl (elabDb region) rpt (#datatycs x)
-               val rpt = foldl (elabTb region) (rpt) (#withtycs x)
+               val rpt = foldl (elabTb region) rpt (#withtycs x)
            in  lift rpt
            end
        | DataReplDec(name,path) => lift rpt
@@ -432,12 +434,9 @@ let
        | MarkDec(dec,region') => elabDec'(dec, env, region', rpt)
        | StrDec strbs => lift (elabStrbs(strbs, env, region, rpt))
        | AbsDec _ => bug "absdec"
-       | FctDec _ => bug "fctdec"
+       | FctDec fctbs => lift (sequence (elabFctb (env, region)) fctbs rpt)
        | SigDec _ => bug "sigdec"
-(*
        | FsigDec _ => bug "fsigdec")
-*)
-       | _ => (say "Skipped declaration\n"; lift rpt))
       end              
 
   and fixityExtend body env = (debugmsg "skipped fixity declarations in 'local'"; env)
@@ -462,6 +461,29 @@ let
              in  elabStrexp (def, env, region, rpt)
              end
           | MarkStr (def, region) => elabStrexp (def, env, region, rpt))
+
+    and elabFctb (env, region) fctb =
+        (case fctb
+           of MarkFctb (fctb, region) => elabFctb (env, region) fctb
+            | Fctb {name, def} => elabFctexp (env, region) def)
+
+    and elabFctexp (env, region) def =
+        (case def
+           of VarFct(spath,constraintExpOp) =>
+               (debugmsg "skipped functor variable"; id)
+            | LetFct(decl,fct) =>
+               (debugmsg "skipped let functor (have no idea what this is)"; id)
+
+            | AppFct(spath,larg,constraint) =>
+               (debugmsg "skipped application functor; call me later"; id)
+
+            | BaseFct{params,body,constraint} =>
+               ( debugmsg "skipped functor parameters"
+               ; debugmsg "skipped functor constraint"
+               ; (fn rpt => elabStrexp (body, env, region, rpt))
+               )
+
+            | MarkFct(fctexp',region') => elabFctexp (env, region') fctexp')
 
              
 
