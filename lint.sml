@@ -35,6 +35,9 @@ infix 3 >>
 
 fun f >> g = g o f
 
+fun elabOpt f NONE     rpt = rpt
+  | elabOpt f (SOME x) rpt = f x rpt
+
 fun uncurry f (x, y) = f x y
 fun curry   f x y    = f (x, y)
 
@@ -157,7 +160,7 @@ let
         | Constructor
         | TConstraint
         
-    fun elabTy region tcontext ty rpt = rpt
+    fun elabTy region tcontext ty rpt = (debugmsg "skipped type"; rpt)
 
 
     (**** EXCEPTION DECLARATIONS ****)
@@ -261,9 +264,6 @@ let
       | patom _ _ rpt _ = rpt
 
 
-    fun elabTy (tau, tcontext, region) rpt =
-      (debugmsg "skipped type"; rpt)
-
     fun elabPat (p:Ast.pat, env, context : pcontext, region:region) rpt =
       let val atom = patom region context rpt
           fun elab ctx pat rpt = elabPat (pat, env, ctx, region) rpt
@@ -290,7 +290,7 @@ let
          | AppPat {constr, argument} =>
              (elab (P Function) constr >> elab (P Argument) argument) rpt
          | ConstraintPat {pattern=pat,constraint=ty} =>
-             (elab (P Constrained) pat >> elabTy (ty, (), region)) rpt
+             (elab (P Constrained) pat >> elabTy region TConstraint ty) rpt
          | LayeredPat {varPat,expPat} =>
              (elab (P InfixChild) varPat >> elab (P InfixChild) expPat) rpt
          | MarkPat (pat,region) =>
@@ -352,7 +352,7 @@ let
        | AppExp {function,argument} =>
            elab (E Argument) argument (elab (E Function) function rpt)
        | ConstraintExp {expr=exp,constraint=ty} =>
-           (elab (E Constrained) exp >> elabTy (ty, (), region)) rpt
+           (elab (E Constrained) exp >> elabTy region TConstraint ty) rpt
        | HandleExp {expr,rules} =>
            (elab (E Handle) expr >> elabMatch (rules, env, Handle, region)) rpt
        | RaiseExp exp => elab Raise exp rpt
@@ -415,10 +415,8 @@ let
        | ValDec(vbs,_) => lift (foldl (elabVb (region, env)) rpt vbs)
        | FunDec(fbs,explicitTvs) =>
            lift (elabFUNdec(fbs,explicitTvs,env,region,rpt))
-(*
        | ValrecDec(rvbs,explicitTvs) =>
-           elabVALRECdec(rvbs,explicitTvs,env,rpath,region)
-*)
+           lift (sequence (elabRvb (region, env)) rvbs rpt)
        | SeqDec ds =>
            foldl (fn (dec, (env, rpt)) => elabDec'(dec, env, region, rpt)) (env, rpt) ds
        | LocalDec (dec, body) =>
@@ -527,187 +525,14 @@ let
              (elabPat (pat, env, PVal, region) >> elabExp (exp, env, Rhs, region)) rpt)
            )
 
-(*
-    and elabVALdec(vb,etvs,env,rpath,region) =
-       let val etvs = ET.elabTyvList(etvs,error,region)
-       val (ds,pats,updt1) = 
-          foldr 
-        (fn (vdec,(ds1,pats1,updt1)) => 
-           let val etvs = TS.mkTyvarset(map T.copyTyvar etvs)
-               val (d2,pats2,updt2) = elabVB(vdec,etvs,env,region)
-            in (d2::ds1,pats2@pats1,updt2::updt1) 
-                   end)
-        ([],[],[]) vb
-        fun updt tv : unit = app (fn f => f tv) updt1
-    in (SEQdec ds, bindVARp (pats,error region), TS.empty, updt)
-       end
-*)
+    and elabRvb (region, env) rvb rpt =
+      (case rvb
+         of MarkRvb(rvb, region) => elabRvb (region, env) rvb rpt
+          | Rvb {resultty, exp, ...} =>
+             ( debugmsg "linting rvb"
+             ; elabOpt (elabTy region TConstraint) resultty >>
+               elabExp (exp, env, Rhs, region)) rpt)
 
-(*
-    and elabRVB(MarkRvb(rvb,region),env,_) =
-    let val ({ match, ty, name }, tvs, u) = elabRVB(rvb,env,region)
-        val match' = cMARKexp (match, region)
-    in
-        ({ match = match', ty = ty, name = name }, tvs, u)
-    end
-      | elabRVB(Rvb{var,fixity,exp,resultty,lazyp},env,region) =
-         (case stripExpAst(exp,region)
-        of (FnExp _,region')=>
-            let val (e,ev,updt) = elabExp(exp,env,region')
-            val (t,tv) = 
-            case resultty 
-              of SOME t1 => 
-                   let val (t2,tv2) = ET.elabType(t1,env,error,region)
-                in (SOME t2,tv2)
-                   end
-               | NONE => (NONE,TS.empty)
-         in case fixity 
-              of NONE => ()
-               | SOME(f,region) => 
-             (case lookFix(env,f) 
-               of Fixity.NONfix => ()
-                | _ =>
-                  error region EM.COMPLAIN
-                    ("infix symbol \""^ S.name f ^
-                 "\" used where a nonfix identifier was expected")
-                EM.nullErrorBody);
-            ({match = e , ty = t, name=var},
-             union(ev,tv,error region),updt)
-        end
-         | _ =>
-        (error region EM.COMPLAIN
-          "fn expression required on rhs of val rec"
-          EM.nullErrorBody;
-         ({match = dummyFNexp, ty = NONE, name = var},TS.empty,no_updt)))
-
-    and elabVALRECstrict(rvbs,etvs,env,region) = 
-    let val env' = ref(SE.empty: SE.staticEnv)
-        fun makevar region (p as Rvb{var,...}) =
-          let val v = newVALvar var
-                      val nv = newVALvar var (* DBM: what is this for? *)
-           in (* checkBoundConstructor(env,var,error region); -- fix bug 1357 *)
-              env' := SE.bind(var,B.VALbind v,!env');
-              (v, p)
-          end
-          | makevar _ (p as MarkRvb(rvb,region)) = 
-          let val (v,_) = makevar region rvb in (v,p) end
-
-        val rvbs' = map (makevar region) rvbs
-        val env'' = SE.atop(!env', env)
-        val (rvbs,tyvars,updts)=
-        foldl (fn((v,rvb1),(rvbs1,tvs1,updt1)) =>
-               let val (rvb2,tv2,updt2) =
-                   elabRVB(rvb1,env'',region)
-                in ((v,rvb2)::rvbs1, 
-                union(tv2,tvs1,error region),
-                updt2::updt1)
-               end) 
-            ([],TS.empty,[]) rvbs' 
-        val tvref = ref []
-        fun updt tvs : unit =  
-        let fun a++b = union(a,b,error region)
-            fun a--b = diff(a,b,error region)
-            val localtyvars = (tyvars ++ etvs) -- (tvs --- etvs)
-            val downtyvars = localtyvars ++ (tvs --- etvs)
-         in tvref := TS.elements localtyvars;
-            app (fn f => f downtyvars) updts
-        end
-        val _ = EU.checkUniq(error region,
-                        "duplicate function name in val rec dec",
-                (map (fn (v,{name,...}) => name) rvbs))
-
-            val (ndec, nenv) = 
-            wrapRECdec((map (fn (v,{ty,match,name}) =>
-                    RVB{var=v,resultty=ty,tyvars=tvref, exp=match,
-                    boundtvs=[]})
-                    rvbs),
-               compInfo)
-         in (ndec, nenv, TS.empty, updt)
-    end (* fun elabVALRECstrict *)
-
-    (* LAZY: "val rec lazy ..." *)
-    and elabVALREClazy (rvbs,etvs,env,region) = 
-    let fun split [] = ([],[])
-          | split ((Rvb {var,exp,resultty,lazyp,...})::xs) =
-         let val (a,b) = split xs in ((var,resultty)::a,(exp,lazyp)::b) end
-          | split ((MarkRvb (x,_))::xs) = split (x::xs) (* loosing regions *)
-
-        val (yvar,declY) = lrvbMakeY (length rvbs)
-
-        val (lhss,exps) = split rvbs
-        val argpat = TuplePat(map (fn (sym,NONE) => VarPat[sym]
-                    | (sym,SOME ty) =>
-                        ConstraintPat{pattern=VarPat[sym],
-                              constraint=ty})
-                      lhss)
-
-        fun elabFn((exp,lazyp),(fexps,tvs,updts)) =
-        let val (p,tv1) = elabPat(argpat, env, region)
-            val env' = SE.atop(bindVARp ([p],error region), env)
-            val (e,tv2,updt) = elabExp(exp,env',region)
-        in (FNexp(completeMatch[RULE(p,if lazyp then e else delayExp e)],
-              UNDEFty)::fexps,
-            union(union(tv1,tv2,error region),tvs,error region),
-            updt::updts)
-        end
-
-        val (fns,tyvars,updts) = foldr elabFn ([],TS.empty,[]) exps
-
-        val lhsSyms = map #1 lhss  (* left hand side symbols *)
-        val lhsVars = map newVALvar lhsSyms
-
-        (* copied from original elabVALRECdec *)
-        val tvref = ref []
-        fun updt tvs : unit =  
-        let fun a++b = union(a,b,error region)
-            fun a--b = diff(a,b,error region)
-            val localtyvars = (tyvars ++ etvs) -- (tvs --- etvs)
-            val downtyvars = localtyvars ++ (tvs --- etvs)
-         in tvref := TS.elements localtyvars;
-            app (fn f => f downtyvars) updts
-        end
-
-        val declAppY =
-        VALdec[VB{pat=TUPLEpat(map VARpat lhsVars),
-              exp=APPexp(VARexp(ref yvar,[]),TUPLEexp fns),
-              tyvars=tvref,boundtvs=[]}]
-
-        fun forceStrict ((sym,var1,lazyp),(vbs,vars)) =
-          let val var2 = newVALvar sym
-              val vb = if lazyp
-                   then VB{pat=VARpat var2, 
-                       exp=VARexp (ref var1,[]),boundtvs=[],
-                       tyvars=ref[]}
-                   else VB{pat=APPpat(BT.dollarDcon,[],(VARpat var2)), 
-                       exp=VARexp (ref var1,[]),boundtvs=[],
-                       tyvars=ref[]}
-          in  (vb::vbs,var2::vars)
-          end
-
-        fun zip3(x::xs,y::ys,z::zs) = (x,y,z)::zip3(xs,ys,zs)
-          | zip3(nil,_,_) = nil
-          | zip3 _ = bug "zip3"
-
-        val (vbs,vars) =
-        foldr forceStrict ([],[]) (zip3(lhsSyms,lhsVars,map #2 exps))
-
-        val env' = foldl (fn ((s,v),env) => SE.bind(s,B.VALbind v,env)) SE.empty
-                 (ListPair.zip(lhsSyms,vars))
-
-        val absyn = LOCALdec(SEQdec[declY,declAppY],VALdec vbs)
-     in showDec("elabVALREClazy: ",absyn,env');
-        (absyn,env',TS.empty(*?*),updt)
-    end (* fun elabVALREClazy *)
-
-    and elabVALRECdec(rvbs: rvb list,etvs,env,rpath:IP.path,region) = 
-    let val etvs = TS.mkTyvarset(ET.elabTyvList(etvs,error,region))
-        fun isLazy(Rvb{lazyp,...}) = lazyp
-          | isLazy(MarkRvb(rvb,_)) = isLazy rvb
-         in if List.exists isLazy rvbs
-        then elabVALREClazy(rvbs,etvs,env,region)
-        else elabVALRECstrict(rvbs,etvs,env,region) 
-    end
-*)
     and elabFUNdec(fb,etvs,env,region,rpt) =
     let     (* makevar: parse the function header to determine the function name *)
         fun makevar _ (MarkFb(fb,fbregion)) = makevar fbregion fb
