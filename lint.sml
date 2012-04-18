@@ -81,21 +81,12 @@ in
 
 end
 
-(*
-fun lookFix ([], _) = Fixity.NONfix
-  | lookFix ((x,f)::xs, y) =
-       case S.compare(x, y)
-         of EQUAL => f
-          | _     => lookFix (xs, y)
-*)
-
+  (* sanity check *)
 val _ = case Fixity.fixityToString (lookFix (initEnv, Symbol.varSymbol "@"))
           of "infixr 5 " => ()
            | s => (app print ["Bad fixity ", s, " for operator @\n"] ; bug "fixity")
 
 val debugPrint = (fn x => if !debugging then print x else ())
-
-infix -->
 
 fun stripExpAst(MarkExp(e,r'),r) = stripExpAst(e,r')
   | stripExpAst(ConstraintExp{expr=e,...},r) = stripExpAst(e,r)
@@ -131,11 +122,6 @@ fun getname error (MarkPat(p,region),_) = getname error (p,region)
             bogusID)
 
 
-
-(* LAZY *)
-(* clauseKind: used for communicating information about lazy fun decls
-   between preprocessing phase (makevar) and main part of elabFUNdec *)
-datatype clauseKind = STRICT | LZouter | LZinner
 
 exception Unimp of string
 
@@ -391,22 +377,6 @@ let
            elabInfix expVarOnly E elabExp
            (parse(map (fixmap ATOM) items,env,error),env,unE context,region) rpt
 )end
-
-(*
-    and elabELabel(labs,env,region) =
-    let val (les1,lvt1,updt1) =
-          foldr 
-        (fn ((lb2,e2),(les2,lvt2,updts2)) => 
-            let val (e3,lvt3,updt3) = elabExp(e2,env,region)
-             in ((lb2,e3) :: les2, union(lvt3,lvt2,error region),
-             updt3 :: updts2)
-            end)
-        ([],TS.empty,[]) labs
-        fun updt tv : unit = app (fn f => f tv) updt1
-     in (les1, lvt1, updt)
-    end
-
-*)
 
     and elabMatch (rs,env,context,region) =
       sequence (fn (Rule {pat, exp}) => 
@@ -772,7 +742,7 @@ let
 
                   fun parseClause(Clause{pats,resultty,exp}) =
                   let val (funsym,argpats) = parse pats
-                   in {kind=STRICT,funsym=funsym,argpats=argpats,
+                   in {kind=(), funsym=funsym,argpats=argpats,
                        resultty=resultty,exp=exp}
                   end
 
