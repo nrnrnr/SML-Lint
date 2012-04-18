@@ -68,7 +68,6 @@ local
          | NONE => Fixity.NONfix
 
 
-
 in
     val initEnv = [] : env
     val initEnv = foldl (addfix Fixity.infixleft)  initEnv left
@@ -79,6 +78,7 @@ in
                                         val lookup = lookup)
     val lookFix = lookup
 
+    fun bindFix(id, fixity, env) = (id, fixity) :: env
 end
 
   (* sanity check *)
@@ -391,6 +391,10 @@ let
     and elabTb region (_, rpt) = (say "skipped tb"; rpt) (* BOGUS *)
 
     and elabDec'(dec,env,region,rpt) : fixenv * Report.t =
+        (* N.B. current code *extends* an existing environment,
+           but it may make more sense to *return* one and combine,
+           so as to deal with 'local' declarations *)
+
       let fun lift rpt = (env, rpt)
           fun elab dev (env, rpt) = elabDec'(dev, env, region, rpt)
       in
@@ -422,16 +426,11 @@ let
                  val (env2, rpt) = elab body (env1, rpt)
              in  (fixityExtend body env, rpt)
              end
-(*
-       | OpenDec ds => elabOPENdec(ds,env,region)
-       | FixDec (ds as {fixity,ops}) => 
-           let val env = 
-         foldr (fn (id,env) => SE.bind(id,B.FIXbind fixity,env))
-            SE.empty ops
-        in (FIXdec ds,env,TS.empty,no_updt)
-           end
-       | OvldDec dec  => elabOVERLOADdec(dec,env,rpath,region)
-*)
+
+       | OpenDec ds => lift rpt
+       | FixDec (ds as {fixity,ops}) =>
+           (foldl (fn (id, env) => bindFix(id, fixity, env)) env ops, rpt)
+       | OvldDec dec  => lift rpt  (* SML/NJ internal; not linted *)
        | MarkDec(dec,region') => elabDec'(dec, env, region', rpt)
        | StrDec strbs => lift (elabStrbs(strbs, env, region, rpt))
        | AbsDec _ => bug "absdec"
