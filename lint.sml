@@ -392,6 +392,7 @@ let
 
     and elabDec'(dec,env,region,rpt) : fixenv * Report.t =
       let fun lift rpt = (env, rpt)
+          fun elab dev (env, rpt) = elabDec'(dev, env, region, rpt)
       in
     (case dec 
       of TypeDec tbs => lift (foldl (elabTb region) rpt tbs)
@@ -416,8 +417,12 @@ let
 *)
        | SeqDec ds =>
            foldl (fn (dec, (env, rpt)) => elabDec'(dec, env, region, rpt)) (env, rpt) ds
+       | LocalDec (dec, body) =>
+             let val (env1, rpt) = elab dec  (env,  rpt)
+                 val (env2, rpt) = elab body (env1, rpt)
+             in  (fixityExtend body env, rpt)
+             end
 (*
-       | LocalDec ld => elabLOCALdec(ld,env,rpath,region)
        | OpenDec ds => elabOPENdec(ds,env,region)
        | FixDec (ds as {fixity,ops}) => 
            let val env = 
@@ -437,6 +442,8 @@ let
 *)
        | _ => (say "Skipped declaration\n"; lift rpt))
       end              
+
+  and fixityExtend body env = (debugmsg "skipped fixity declarations in 'local'"; env)
 
   and elabStrbs (strbs, env, region, rpt) =
         foldl (fn (strb, rpt) => elabStrb (strb, env, region, rpt)) rpt strbs
