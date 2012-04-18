@@ -488,28 +488,6 @@ let
              
 
 
-    (**** OVERLOADING ****)
-
-(*
-    and elabOVERLOADdec((id,typ,exps),env,rpath,region) =
-    let val (body,tyvars) = ET.elabType(typ,env,error,region)
-        val tvs = TS.elements tyvars
-        val scheme = (TU.bindTyvars tvs; TU.compressTy body;
-              TYFUN{arity=length tvs, body=body})
-        fun option (MARKexp(e,_)) = option e
-          | option (VARexp(ref (v as VALvar{typ,...}),_)) =
-          {indicator = TU.matchScheme(scheme,!typ), variant = v}
-          | option _ = bug "makeOVERLOADdec.option"
-        val exps = map (fn exp => elabExp(exp,env,region)) exps
-        val exps1 = map #1 exps
-        and exps3 = map #3 exps
-        fun updt tv: unit = app (fn f => f tv) exps3
-        val ovldvar = OVLDvar{name=id,scheme=scheme,
-                  options=ref(map option exps1)}
-     in (OVLDdec ovldvar, SE.bind(id,B.VALbind ovldvar,SE.empty),
-             TS.empty, updt)
-    end
-*)
     (**** LOCAL ****)
 
 (*
@@ -522,30 +500,13 @@ let
     end
 *)
 
-    (**** OPEN ****)
-
-(*
-    and elabOPENdec(spaths, env, region) = 
-        let val err = error region
-        val strs = map (fn s => let val sp = SP.SPATH s
-                                     in (sp, LU.lookStr(env, sp, err))
-                                    end) spaths
-        
-            fun loop([], env) = (OPENdec strs, env, TS.empty, no_updt)
-              | loop((_, s)::r, env) = loop(r, MU.openStructure(env, s))
-
-         in loop(strs, SE.empty)
-        end 
-*)
-
     (****  VALUE DECLARATIONS ****)
 
     and elabVb (region, env) (vb, rpt) =
       (case vb
          of MarkVb(vb, region) => elabVb (region, env) (vb, rpt)
-         | Vb {pat, exp, ...} => (debugmsg "linting vb"; 
+          | Vb {pat, exp, ...} => 
              (elabPat (pat, env, PVal, region) >> elabExp (exp, env, Rhs, region)) rpt)
-           )
 
     and elabRvb (region, env) rvb rpt =
       (case rvb
@@ -642,9 +603,6 @@ let
         fun updt tv : unit = app (fn f => f tv) updt1
      in (SEQdec(rev ds1),env1,tv1,updt)
     end
-
-    val _ = debugmsg ("EC.elabDec calling elabDec' - foo")
-    val (dec',env',tyvars,tyvUpdate) = elabDec'(dec,env,rpath,region)
 *)
 
  in elabDec' (dec, env, region, rpt)
