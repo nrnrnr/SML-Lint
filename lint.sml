@@ -1,3 +1,9 @@
+(* TODO: PARENS AROUND RHS APPLICATION OK IF CLAUSE HAS PARENS AROUND ARG *)
+(* TODO: infix thingies of the *same* operator should not have parens, especially
+   if right associative *)
+
+
+
 functor LintFn (structure Report : REPORT where type name = Symbol.symbol
                                             and type pos  = SourceMap.charpos
                ) =
@@ -258,15 +264,15 @@ let
       let fun elab thing context =
                 elabInfix varOnly wrap atom (thing, env, context, region)
       in  case thing
-            of ATOM a => atom (a, env, wrap context, region) 
-             | APPLY (f, arg) => elab f Function >> elab arg Argument
+            of ATOM a => atom (a, env, context, region) 
+             | APPLY (f, arg) => elab f (wrap Function) >> elab arg (wrap Argument)
              | INFIX (left, opr, right) =>
-                 elab left InfixChild >> elabOpr varOnly opr >> elab right InfixChild
+                 elab left (wrap InfixChild) >> elabOpr varOnly opr >> elab right (wrap InfixChild)
       end
 
     fun atom (Bracketed region) rpt what =
           let val (pos, _) = region
-          in  Report.brackets ("redundant parentheses around " ^ what, pos, rpt)
+          in  Report.brackets ("around " ^ what, pos, rpt)
           end
       | atom _ rpt _ = rpt
 
@@ -310,7 +316,7 @@ let
              elabPat (pat, env, context, region) rpt
          | FlatAppPat pats =>
              elabInfix patVarOnly P elabPat
-             (parse(map (fixmap ATOM) pats,env,error), env, unP context, region) rpt
+             (parse(map (fixmap ATOM) pats,env,error), env, context, region) rpt
       end
 
     and elabPatList(ps, env, context, region:region) rpt =
@@ -327,55 +333,56 @@ let
 
     fun checkBracket region (context:econtext) rpt e =
       let fun fail why = Report.brackets(why, fst region, rpt) 
+          fun atom what = fail ("around " ^ what)  (* should be OK in some
+                                                       pattern clauses *)
           fun badIfFunction (E Function) = fail "around partially applied function"
             | badIfFunction _ = rpt
-          fun checkAtom (e:Ast.exp) = (* things it is never right to have parens around *)
+          fun checkAtom e k = (* things it is never right to have parens around *)
             case e
-              of VarExp [sym] => fail "around name"
-               | VarExp _ => fail "around qualified name"
-               | IntExp s => fail "around integer literal"
-               | WordExp s => fail "around word literal"
-               | RealExp r => fail "around floating-point literal"
-               | StringExp s => fail "around string literal"
-               | CharExp s => fail "around character literal"
-               | RecordExp _ => fail "around record literal"
-               | SeqExp [e] => checkAtom (stripExpAst e)
-               | ListExp _ => fail "list literal"
-               | TupleExp exps => fail "around tuple literal"
-               | VectorExp exps => fail "around vector literal"
-               | AppExp _ => badIfFunction context
-               | FlatAppExp _ => bug "need to check for infix curried function"
-               | _ => rpt
+              of VarExp [sym] => atom "name"
+               | VarExp _ => atom "qualified name"
+               | IntExp s => atom "integer literal"
+               | WordExp s => atom "word literal"
+               | RealExp r => atom "floating-point literal"
+               | StringExp s => atom "string literal"
+               | CharExp s => atom "character literal"
+               | RecordExp _ => atom "record literal"
+               | SeqExp [e] => checkAtom (stripExpAst e) k
+               | ListExp _ => atom "list literal"
+               | TupleExp exps => atom "tuple literal"
+               | VectorExp exps => atom "vector literal"
+               | e => k e
 
           fun common c e =
             case c
               of InfixChild => rpt  (* always OK *)
-               | Function => checkAtom e (* catch this *after* atoms *)
-               | Argument => checkAtom e
+               | Function => (debugmsg "function posn not checked"; rpt)
+               | Argument => rpt (* brackets OK *)
                | Element container => fail ("around element of " ^ whatc container)
                | Bracketed _ => fail "immediately inside other parentheses"
                | Constrained => fail "around exp in (exp) : ty"
                | Handle => fail "around expression in exception handler"
                | CaseMatch => fail "around expression in case match"
                | FnMatch => fail "around right-hand side of anonymous 'fn'"
-               | HighLevel => bug "high-level context under E"
+               | HighLevel => fail "in some unspecified bad place"
 
       in  case stripExpAst e 
             of CaseExp _ => rpt
              | FnExp _ => rpt
              | HandleExp _ => rpt
-             | e =>
+             | SeqExp (_::_::_) => rpt
+             | e => checkAtom e (fn e =>
                 case context
                   of Condition => fail "around condition in 'if'"
                    | IfCase => fail "around case in 'if'"
                    | WhileCondition => fail "around condition in 'while'"
                    | WhileBody => fail "around body of 'while'"
                    | Rhs => fail "around right-hand side of clause"
-                   | Raise => checkAtom e
+                   | Raise => rpt  (* let it pass *)
                    | LetBody => fail "around body of let-expression"
                    | Scrutinee => fail "around expression scrutinized in 'case'"
                    | Sequent => fail "around expression in sequence"
-                   | E c => common c e
+                   | E c => common c e)
       end
 
 
@@ -390,7 +397,6 @@ let
     (case exp
       of BracketExp e =>
            let val rpt = checkBracket region context rpt e
-               val _ = debugmsg "brackets"
            in  elab (E (Bracketed region)) e rpt
            end
        | VarExp [sym] => atom "name"
@@ -436,7 +442,7 @@ let
        | SelectorExp s => atom "record selector"
        | FlatAppExp items =>
            elabInfix expVarOnly E elabExp
-           (parse(map (fixmap ATOM) items,env,error),env,unE context,region) rpt
+           (parse(map (fixmap ATOM) items,env,error),env,context,region) rpt
 )end
 
     and elabMatch (rs,env,context,region) =
@@ -633,8 +639,6 @@ let
                   val _ = checkBoundConstructor(env,var,error fbregion)
      *)
                   val v = var
-                  val _ = app say ["Linting function named ", S.symbolToString v, "\n"]
-
                in   (v,clauses,fbregion)
               end (* makevar *)
         val fundecs = map (makevar region) fb
