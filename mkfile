@@ -1,5 +1,6 @@
 SMLNJHOME=/usr/lib/smlnj
 SUFFIX=`$SMLNJHOME/bin/.arch-n-opsys | sed 's/.*HEAP_SUFFIX=//'`
+SRC=`find * -name '*.sml' -o -name '*.sig'`
 
 test:V:
 	sml <<'EOF'
@@ -15,7 +16,7 @@ ltest:V:
 
 lint:V: lint.$SUFFIX
 
-lint.$SUFFIX:V:
+lint.$SUFFIX: $SRC
 	ml-build lint.cm Lint.run lint
 
 install:V: $LIB/lint.$SUFFIX
