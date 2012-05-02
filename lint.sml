@@ -99,6 +99,12 @@ fun stripExpAst(MarkExp(e,r'),r) = stripExpAst(e,r')
   | stripExpAst(FlatAppExp[{item,region,...}],r) = stripExpAst(item,region)
   | stripExpAst x = x
 
+fun stripExpAst(MarkExp(e,r')) = stripExpAst e
+  | stripExpAst(ConstraintExp{expr=e,...}) = stripExpAst e
+  | stripExpAst(SeqExp[e]) = stripExpAst e
+  | stripExpAst(FlatAppExp[{item,...}]) = stripExpAst item
+  | stripExpAst x = x
+
 fun ensureInfix error getfix {item,fixity,region} =
    (case getfix fixity
      of Fixity.NONfix =>
@@ -186,6 +192,11 @@ let
 
     datatype comma_syntax = Record | Tuple | List | Vector
       (* things that have elements separated by commas *)
+
+    fun whatc Record = "record"
+      | whatc Tuple = "tuple"
+      | whatc List = "list"
+      | whatc Vector = "vector"
 
     datatype common_context
       = InfixChild
@@ -314,6 +325,60 @@ let
         of Rhs => Report.brackets("parens on RHS of function", fst region, rpt)
          | _ => (debugmsg "brackets not checked" ; rpt)
 
+    fun checkBracket region (context:econtext) rpt e =
+      let fun fail why = Report.brackets(why, fst region, rpt) 
+          fun badIfFunction (E Function) = fail "around partially applied function"
+            | badIfFunction _ = rpt
+          fun checkAtom (e:Ast.exp) = (* things it is never right to have parens around *)
+            case e
+              of VarExp [sym] => fail "around name"
+               | VarExp _ => fail "around qualified name"
+               | IntExp s => fail "around integer literal"
+               | WordExp s => fail "around word literal"
+               | RealExp r => fail "around floating-point literal"
+               | StringExp s => fail "around string literal"
+               | CharExp s => fail "around character literal"
+               | RecordExp _ => fail "around record literal"
+               | SeqExp [e] => checkAtom (stripExpAst e)
+               | ListExp _ => fail "list literal"
+               | TupleExp exps => fail "around tuple literal"
+               | VectorExp exps => fail "around vector literal"
+               | AppExp _ => badIfFunction context
+               | FlatAppExp _ => bug "need to check for infix curried function"
+               | _ => rpt
+
+          fun common c e =
+            case c
+              of InfixChild => rpt  (* always OK *)
+               | Function => checkAtom e (* catch this *after* atoms *)
+               | Argument => checkAtom e
+               | Element container => fail ("around element of " ^ whatc container)
+               | Bracketed _ => fail "immediately inside other parentheses"
+               | Constrained => fail "around exp in (exp) : ty"
+               | Handle => fail "around expression in exception handler"
+               | CaseMatch => fail "around expression in case match"
+               | FnMatch => fail "around right-hand side of anonymous 'fn'"
+               | HighLevel => bug "high-level context under E"
+
+      in  case stripExpAst e 
+            of CaseExp _ => rpt
+             | FnExp _ => rpt
+             | HandleExp _ => rpt
+             | e =>
+                case context
+                  of Condition => fail "around condition in 'if'"
+                   | IfCase => fail "around case in 'if'"
+                   | WhileCondition => fail "around condition in 'while'"
+                   | WhileBody => fail "around body of 'while'"
+                   | Rhs => fail "around right-hand side of clause"
+                   | Raise => checkAtom e
+                   | LetBody => fail "around body of let-expression"
+                   | Scrutinee => fail "around expression scrutinized in 'case'"
+                   | Sequent => fail "around expression in sequence"
+                   | E c => common c e
+      end
+
+
     type env = fixenv
 
     fun elabExp(exp: Ast.exp, env: env, context: econtext, region: region) (rpt : Report.t) 
@@ -324,7 +389,7 @@ let
       in
     (case exp
       of BracketExp e =>
-           let val rpt = checkBracket region context rpt
+           let val rpt = checkBracket region context rpt e
                val _ = debugmsg "brackets"
            in  elab (E (Bracketed region)) e rpt
            end
