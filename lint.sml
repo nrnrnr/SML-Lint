@@ -324,8 +324,6 @@ let
 
     (**** EXPRESSIONS ****)
 
-
-
     fun checkBracket region context rpt =
       case context
         of Rhs => Report.brackets("parens on RHS of function", fst region, rpt)
@@ -339,7 +337,10 @@ let
             | badIfFunction _ = rpt
           fun checkAtom e k = (* things it is never right to have parens around *)
             case e
-              of VarExp [sym] => atom "name"
+              of VarExp [sym] =>
+                  (case lookFix (env, sym)
+                     of Fixity.NONfix => atom "name"
+                      | _ => k e (* got here because of 'op' *))
                | VarExp _ => atom "qualified name"
                | IntExp s => atom "integer literal"
                | WordExp s => atom "word literal"
@@ -399,7 +400,10 @@ let
            let val rpt = checkBracket region context rpt e
            in  elab (E (Bracketed region)) e rpt
            end
-       | VarExp [sym] => atom "name"
+       | VarExp [sym] => 
+           (case lookFix (env, sym)
+              of Fixity.NONfix => atom "name"
+               | _ => rpt (* got here because of 'op' *))
        | VarExp _ => atom "qualified name"
        | IntExp s => atom "integer literal"
        | WordExp s => atom "word literal"
