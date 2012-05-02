@@ -8,10 +8,11 @@ structure ReportErr : REPORT = struct
   fun pushDef (_, m) = m
   fun popDef m = m
 
-  fun brackets (msg, pos, m) =
+  fun brackets (around, pos, m) =
     let val {fileName, line, column} = SourceMap.filepos m pos
         val () = app eprint [fileName, ", line ", Int.toString line,
-                             ", column ", Int.toString column, ": ", msg, "\n"]
+                             ", column ", Int.toString column, ": ",
+                             "redundant parentheses ", around, "\n"]
     in  m
     end        
 
