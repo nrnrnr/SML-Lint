@@ -271,9 +271,7 @@ let
       end
 
     fun atom (Bracketed region) rpt what =
-          let val (pos, _) = region
-          in  Report.brackets ("around " ^ what, pos, rpt)
-          end
+          Report.brackets ("around " ^ what, region, rpt)
       | atom _ rpt _ = rpt
 
     fun eatom (E c) rpt what = atom c rpt what
@@ -326,11 +324,11 @@ let
 
     fun checkBracket region context rpt =
       case context
-        of Rhs => Report.brackets("parens on RHS of function", fst region, rpt)
+        of Rhs => Report.brackets("parens on RHS of function", region, rpt)
          | _ => (debugmsg "brackets not checked" ; rpt)
 
     fun checkBracket region (context:econtext) rpt e =
-      let fun fail why = Report.brackets(why, fst region, rpt) 
+      let fun fail why = Report.brackets(why, region, rpt) 
           fun atom what = fail ("around " ^ what)  (* should be OK in some
                                                        pattern clauses *)
           fun badIfFunction (E Function) = fail "around partially applied function"
