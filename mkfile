@@ -1,4 +1,4 @@
-SMLNJHOME=/usr/lib/smlnj
+SMLNJHOME=`smlnj-home`
 SUFFIX=`$SMLNJHOME/bin/.arch-n-opsys | sed 's/.*HEAP_SUFFIX=//'`
 SRC=`find * -name '*.sml' -o -name '*.sig'`
 

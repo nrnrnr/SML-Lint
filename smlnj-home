@@ -1,0 +1,12 @@
+#!/bin/ksh
+
+for i in /usr/lib/smlnj /usr/lib32/smlnj
+do
+  if [[ -r $i/bin/.arch-n-opsys ]]; then
+    echo $i
+    exit 0
+  fi
+done
+
+echo "Cannot find SMLNJHOME" >&2
+exit 1
