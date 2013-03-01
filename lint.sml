@@ -456,8 +456,8 @@ let
 
     (**** SIMPLE DECLARATIONS ****)
 
-    and elabDb region (_, rpt) = (say "skipped db"; rpt) (* BOGUS *)
-    and elabTb region (_, rpt) = (say "skipped tb"; rpt) (* BOGUS *)
+    and elabDb region (_, rpt) = (debugmsg "skipped db"; rpt) (* BOGUS *)
+    and elabTb region (_, rpt) = (debugmsg "skipped tb"; rpt) (* BOGUS *)
 
     and elabDec'(dec,env,region,rpt) : fixenv * Report.t =
         (* N.B. current code *extends* an existing environment,
