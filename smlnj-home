@@ -1,6 +1,6 @@
 #!/bin/ksh
 
-for i in /usr/lib/smlnj /usr/lib32/smlnj
+for i in /usr/lib/smlnj /usr/lib32/smlnj /usr/sup/smlnj-110.72
 do
   if [[ -r $i/bin/.arch-n-opsys ]]; then
     echo $i
