@@ -360,7 +360,10 @@ let
                | Element container => fail ("around element of " ^ whatc container)
                | Bracketed _ => fail "immediately inside other parentheses"
                | Constrained => fail "around exp in (exp) : ty"
-               | Handle => fail "around expression in exception handler"
+               | Handle => rpt (* fail "around expression in exception handler" *)
+                   (* evilly flags this:
+                     (f x before evalFuel := old) handle e => (evalFuel := old; raise e)
+                    *)
                | CaseMatch => fail "around expression in case match"
                | FnMatch => fail "around right-hand side of anonymous 'fn'"
                | HighLevel => fail "in some unspecified bad place"
